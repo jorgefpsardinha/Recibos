@@ -1,0 +1,894 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Recibos</title>
+<meta name="theme-color" content="#1F7A55">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Recibos">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F7F5; --surface:#FFFFFF; --ink:#17231D; --muted:#5A6A61; --line:#D7E1DA;
+  --green:#1F7A55; --green-ink:#FFFFFF; --green-soft:#E2F0E7;
+  --amber:#9A5C07; --amber-soft:#FAEFD9; --red:#B23A32; --red-soft:#F8E2DF;
+  --radius-lg:14px; --radius-sm:8px;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --bg:#0F1713; --surface:#17221C; --ink:#E5EEE8; --muted:#94A69C; --line:#2A3A31;
+  --green:#4CC08A; --green-ink:#08140E; --green-soft:#183526;
+  --amber:#E6A84E; --amber-soft:#3A2B12; --red:#EF7D72; --red-soft:#3C1E1B;
+}}
+:root[data-theme="dark"]{
+  --bg:#0F1713; --surface:#17221C; --ink:#E5EEE8; --muted:#94A69C; --line:#2A3A31;
+  --green:#4CC08A; --green-ink:#08140E; --green-soft:#183526;
+  --amber:#E6A84E; --amber-soft:#3A2B12; --red:#EF7D72; --red-soft:#3C1E1B;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Public Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.5;font-variant-numeric:tabular-nums}
+.wrap{max-width:720px;margin:0 auto;padding:16px 16px 48px}
+header.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:8px 0 14px}
+h1{font-size:1.6rem;font-weight:800;letter-spacing:-.02em;margin:0}
+h2{font-size:1.15rem;font-weight:700;margin:28px 0 10px;letter-spacing:-.01em}
+h3{font-size:1rem;font-weight:700;margin:0 0 4px}
+.sync{font-size:.8rem;color:var(--muted)}
+nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;gap:4px;padding:6px 0 10px;overflow-x:auto}
+nav.tabs button{flex:1;min-width:max-content;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 12px;border-radius:999px;font:inherit;font-size:.92rem;font-weight:600;cursor:pointer}
+nav.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--green);outline-offset:2px}
+.banner{background:var(--amber-soft);color:var(--ink);border-radius:var(--radius-sm);padding:10px 12px;font-size:.9rem;margin-bottom:12px}
+
+/* receipt hero */
+.receipt{position:relative;background:var(--surface);border-radius:var(--radius-lg);padding:22px 20px 18px;margin:6px 0 8px;border:1px solid var(--line)}
+.receipt::after{content:"";position:absolute;left:14px;right:14px;bottom:62px;border-top:2px dashed var(--line)}
+.receipt .lbl{color:var(--muted);font-size:.85rem}
+.receipt .amount{font-size:2.6rem;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin:6px 0 2px}
+.receipt .range{font-weight:600}
+.receipt .foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:34px;flex-wrap:wrap}
+.days{display:flex;gap:3px;margin-top:14px}
+.days i{flex:1;height:8px;border-radius:2px;background:var(--line)}
+.days i.on{background:var(--green)}
+
+.chip{display:inline-block;font-size:.8rem;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.t-ok{background:var(--green-soft);color:var(--green)}
+.t-warn{background:var(--amber-soft);color:var(--amber)}
+.t-bad{background:var(--red-soft);color:var(--red)}
+.t-wait{background:var(--green-soft);color:var(--ink)}
+.t-neutral{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+
+.list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;background:var(--surface)}
+.row{display:grid;grid-template-columns:2.2rem 1fr auto;gap:10px;align-items:center;padding:12px 14px;border:0;border-top:1px solid var(--line);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;width:100%}
+.row:first-child{border-top:0}
+.row:hover{background:var(--bg)}
+.row .n{color:var(--muted);font-weight:700;font-size:.9rem}
+.row .r1{font-weight:600}
+.row .r2{margin-top:3px}
+.row .v{font-weight:700;text-align:right}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin-top:8px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;text-align:right;font-weight:600}
+.kv .total{font-weight:800;font-size:1.15rem;color:var(--ink)}
+.note{font-size:.84rem;color:var(--muted);margin:10px 0 0}
+.bar{height:10px;background:var(--bg);border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-top:10px}
+.bar span{display:block;height:100%;background:var(--green)}
+.bar.warn span{background:var(--amber)} .bar.bad span{background:var(--red)}
+.yearsel{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 12px}
+.yearsel button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:var(--radius-sm);padding:6px 12px;font:inherit;font-weight:600;cursor:pointer}
+.yearsel button[aria-pressed="true"]{border-color:var(--green);background:var(--green-soft)}
+
+.cal{list-style:none;margin:0;padding:0}
+.cal li{display:grid;grid-template-columns:4.2rem 1fr;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.cal li:first-child{border-top:0}
+.cal .d{font-weight:800;line-height:1.15}
+.cal .d small{display:block;font-weight:500;color:var(--muted);font-size:.78rem}
+
+form.settings fieldset{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);padding:12px 16px 16px;margin:0 0 12px}
+legend{font-weight:700;padding:0 6px}
+label{display:block;font-size:.88rem;color:var(--muted);margin-top:10px}
+input,select,textarea{display:block;width:100%;margin-top:4px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:9px 10px}
+textarea{min-height:5.5rem;resize:vertical}
+.check{display:flex;gap:8px;align-items:center;color:var(--ink)}
+.check input{width:auto;margin:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+@media (max-width:460px){.grid2{grid-template-columns:1fr}}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 14px;border-radius:var(--radius-sm);font:inherit;font-weight:600;cursor:pointer}
+.btn.primary{background:var(--green);color:var(--green-ink);border-color:var(--green)}
+.btn.danger{color:var(--red)}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+
+dialog{border:0;border-radius:var(--radius-lg);padding:0;width:min(560px,94vw);max-height:90vh;background:var(--surface);color:var(--ink)}
+dialog::backdrop{background:rgba(10,20,15,.5)}
+.dlg{padding:18px 18px 20px;overflow:auto;max-height:90vh}
+.dlg header{display:flex;justify-content:space-between;align-items:start;gap:10px}
+.x{border:0;background:none;color:var(--muted);font-size:1.5rem;line-height:1;cursor:pointer;padding:2px 6px}
+iframe.preview{width:100%;height:420px;border:1px solid var(--line);border-radius:var(--radius-sm);background:#fff;margin-top:12px}
+.grid3{display:grid;grid-template-columns:1fr 7rem auto;gap:8px;align-items:center;margin-top:6px}
+.grid3 input{margin-top:0}
+.totline{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--line);margin-top:14px;padding-top:12px;font-size:1.05rem}
+a{color:var(--green)}
+.guide h2{margin-top:30px}
+.guide h2:first-of-type{margin-top:8px}
+.guide .when{color:var(--muted);margin:-4px 0 12px;font-size:.95rem}
+.steps{list-style:none;counter-reset:st;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg)}
+.steps>li{counter-increment:st;display:grid;grid-template-columns:2rem 1fr;gap:12px;padding:14px 16px;border-top:1px solid var(--line)}
+.steps>li:first-child{border-top:0}
+.steps>li::before{content:counter(st);display:flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:50%;background:var(--green-soft);color:var(--green);font-weight:800}
+.steps h3{margin:4px 0 4px;font-size:1.02rem}
+.steps p{margin:0 0 6px;max-width:62ch}
+.steps ul{margin:4px 0 0;padding-left:1.1rem}
+.steps ul li{margin:3px 0}
+.tip{background:var(--green-soft);border-radius:var(--radius-sm);padding:10px 12px;margin-top:8px;font-size:.92rem}
+.guide kbd{font:inherit;font-weight:600;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:0 5px}
+body.gated nav.tabs,body.gated #sync{display:none}
+.gate{max-width:420px;margin:24px auto 0}
+.gate h2{margin-top:0}
+.gate .err{color:var(--red);font-size:.9rem;margin-top:10px;min-height:1.2em}
+.linkbtn{background:none;border:0;padding:0;color:var(--green);font:inherit;text-decoration:underline;cursor:pointer}
+.fxrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.empty{padding:22px 16px;text-align:center;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body class="gated">
+<div class="wrap">
+  <header class="top">
+    <h1>Recibos</h1>
+    <span class="sync" id="sync">A ligar…</span>
+  </header>
+  <div id="banner"></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="periodos" aria-selected="true">Períodos</button>
+    <button role="tab" data-tab="contas" aria-selected="false">Contas</button>
+    <button role="tab" data-tab="calendario" aria-selected="false">Calendário</button>
+    <button role="tab" data-tab="definicoes" aria-selected="false">Definições</button>
+    <button role="tab" data-tab="guia" aria-selected="false">Guia</button>
+  </nav>
+  <main id="view"></main>
+</div>
+
+<dialog id="dlg"><div class="dlg" id="dlgBody"></div></dialog>
+
+<script>
+/* ---------- helpers ---------- */
+const D = s => { const [y,m,d] = s.split('-').map(Number); return new Date(Date.UTC(y,m-1,d)); };
+const S = d => d.toISOString().slice(0,10);
+const addDays = (s,n) => { const d = D(s); d.setUTCDate(d.getUTCDate()+n); return S(d); };
+const addMonths = (s,n) => { const d = D(s); d.setUTCMonth(d.getUTCMonth()+n); return S(d); };
+const today = () => { const n = new Date(); return S(new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()))); };
+const addBiz = (s,n) => { const d = D(s); let c = 0; while (c < n) { d.setUTCDate(d.getUTCDate()+1); const w = d.getUTCDay(); if (w && w !== 6) c++; } return S(d); };
+const diff = (a,b) => Math.round((D(b)-D(a))/864e5);
+const fmtD = (s,y) => D(s).toLocaleDateString('pt-PT',{day:'numeric',month:'short',year:y?'numeric':undefined,timeZone:'UTC'});
+const eur = n => new Intl.NumberFormat('pt-PT',{style:'currency',currency:'EUR'}).format(n||0);
+const cur = (n,c) => new Intl.NumberFormat('pt-PT',{style:'currency',currency:c||settings.currency||'EUR'}).format(n||0);
+const fx4 = n => (+n).toLocaleString('pt-PT',{minimumFractionDigits:4,maximumFractionDigits:4});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const lastDayOfMonth = (y,m) => S(new Date(Date.UTC(y,m,0))); // m 1-12
+
+/* ---------- state ---------- */
+const DEFAULTS = {
+  activityStart:'2026-08-23', cycleStart:'2026-10-04', cycleDays:28, defaultAmount:0, billingMode:'hourly', hourlyRate:0, defaultHours:0, currency:'USD', fxEstimate:1.15,
+  reservePct:25, regressar:true, regressarYear:2026, dedColeta:250, ivaLimit:15000, ivaMode:'art6',
+  myName:'', myNif:'', myAddress:'', myEmail:'', payment:'',
+  clientName:'', clientAddress:'',
+  serviceDesc:'Consulting services: production management, process efficiency and AI integration',
+  brackets:[[8059,12.5],[12160,16],[17233,21.5],[22306,24.4],[28400,31.4],[41629,34.9],[44987,43.1],[83696,44.6],[null,48]]
+};
+let settings = {...DEFAULTS};
+let stored = {};           // period docs: start -> data
+let tab = 'periodos';
+let selYear = null;
+const timers = {};
+const CFG_KEY = 'recibos-config', CACHE_KEY = 'recibos-cache', PEND_KEY = 'recibos-pending';
+let sb = null, session = null, pending = {}, flushing = false;
+
+function setSync(t){ document.getElementById('sync').textContent = t; }
+const loadJSON = (k,d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch(e) { return d; } };
+const saveJSON = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
+function cacheSave(){ saveJSON(CACHE_KEY, {settings, periods:stored}); }
+function cacheLoad(){ const j = loadJSON(CACHE_KEY, null); if (j) { settings = {...DEFAULTS, ...(j.settings||{})}; stored = j.periods || {}; return true; } return false; }
+
+/* ---------- persistence: Supabase + cópia local ---------- */
+function persist(id, data, delay=500){
+  cacheSave();
+  clearTimeout(timers[id]);
+  timers[id] = setTimeout(() => { pending[id] = data; saveJSON(PEND_KEY, pending); flush(); }, delay);
+}
+async function flush(){
+  if (flushing || !sb || !session) return;
+  if (!Object.keys(pending).length) { setSync('Sincronizado'); return; }
+  if (!navigator.onLine) { setSync('Sem rede: guardado neste dispositivo'); return; }
+  flushing = true; setSync('A guardar…');
+  let ok = true;
+  try {
+    for (const id of Object.keys(pending)) {
+      const data = pending[id];
+      const r = data === null
+        ? await sb.from('records').delete().eq('user_id', session.user.id).eq('id', id)
+        : await sb.from('records').upsert({user_id:session.user.id, id, data, updated_at:new Date().toISOString()}, {onConflict:'user_id,id'});
+      if (r.error) throw r.error;
+      if (pending[id] === data) { delete pending[id]; saveJSON(PEND_KEY, pending); }
+    }
+    setSync('Guardado e sincronizado');
+  } catch(e) {
+    ok = false;
+    setSync('Sem sincronização de momento: fica guardado aqui e tento outra vez.');
+  } finally {
+    flushing = false;
+    if (Object.keys(pending).length) setTimeout(flush, ok ? 300 : 20000);
+  }
+}
+async function pull(){
+  if (!sb || !session) return;
+  if (Object.keys(pending).length) { await flush(); if (Object.keys(pending).length) return; }
+  const {data, error} = await sb.from('records').select('id,data');
+  if (error) { setSync('Sem ligação: a mostrar a cópia deste dispositivo'); return; }
+  if (!data.length) { await seed(); return; }
+  const next = {}; let st = null;
+  data.forEach(r => { if (r.id === 'settings') st = r.data; else if (r.id.startsWith('p_')) next[r.id.slice(2)] = r.data; });
+  settings = {...DEFAULTS, ...(st||{})}; stored = next; cacheSave();
+  const typing = dlg.open || (tab === 'definicoes' && document.activeElement && document.activeElement.closest('form.settings'));
+  if (!typing) render();
+  setSync('Sincronizado');
+}
+async function seed(){
+  if (!cacheLoad()) { settings = {...DEFAULTS}; stored = {'2026-08-23': {end:'2026-10-03'}}; }
+  pending = {settings};
+  Object.entries(stored).forEach(([k,v]) => pending['p_'+k] = v);
+  saveJSON(PEND_KEY, pending); cacheSave(); render(); await flush();
+}
+function replaceAll(newSettings, newStored){
+  Object.keys(stored).forEach(k => { if (!(k in newStored)) pending['p_'+k] = null; });
+  settings = {...DEFAULTS, ...newSettings}; stored = newStored;
+  pending.settings = settings;
+  Object.entries(stored).forEach(([k,v]) => pending['p_'+k] = v);
+  saveJSON(PEND_KEY, pending); cacheSave(); render(); flush();
+}
+
+/* ---------- ficheiros ---------- */
+async function saveFile(name, data, mime){
+  const blob = new Blob([data], {type:mime});
+  try {
+    const file = new File([blob], name, {type:mime});
+    if (/iPhone|iPad|Android/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({files:[file]})) { await navigator.share({files:[file], title:name}); return; }
+  } catch(e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+
+/* ---------- taxa do BCE (via Frankfurter, que publica as taxas de referência do BCE) ---------- */
+async function fetchFx(date){
+  const c = settings.currency || 'USD', t = today();
+  const d = date && date <= t ? date : t;
+  const urls = [`https://api.frankfurter.dev/v1/${d}?base=EUR&symbols=${c}`, `https://api.frankfurter.app/${d}?from=EUR&to=${c}`];
+  for (const u of urls) {
+    try { const r = await fetch(u); if (!r.ok) continue; const j = await r.json(); const v = j && j.rates && j.rates[c]; if (v) return {fx:+v, date:j.date}; } catch(e) {}
+  }
+  throw new Error('fx');
+}
+
+function saveSettings(patch){ settings = {...settings, ...patch}; persist('settings', settings, 700); render({keepForm:true}); }
+function savePeriod(start, data){ stored[start] = data; persist('p_'+start, data, 200); render(); }
+
+/* ---------- domain ---------- */
+function allPeriods(){
+  const s = settings, out = {}, t = today();
+  let st = s.cycleStart, i = 0;
+  while (st <= t && i < 300) { out[st] = {start:st, end:addDays(st, s.cycleDays-1)}; st = addDays(st, s.cycleDays); i++; }
+  for (const [k,d] of Object.entries(stored)) out[k] = {...(out[k]||{start:k, end:addDays(k, s.cycleDays-1)}), ...d, start:k};
+  const arr = Object.values(out).sort((a,b) => a.start < b.start ? -1 : 1);
+  arr.forEach((p,idx) => { p.n = idx+1; Object.assign(p, calc(p)); });
+  return arr;
+}
+const has = v => v != null && v !== '';
+function calc(p){
+  const s = settings, hourly = s.billingMode === 'hourly';
+  const rate = hourly ? (has(p.rate) ? +p.rate : +s.hourlyRate || 0) : 0;
+  const hours = hourly ? (has(p.hours) ? +p.hours : +s.defaultHours || 0) : 0;
+  const base = hourly ? hours * rate : has(p.base) ? +p.base : has(p.amount) ? +p.amount : +s.defaultAmount || 0;
+  const extras = (p.extras || []).filter(e => e && (e.desc || +e.amount)).map(e => ({desc:String(e.desc||''), amount:+e.amount||0}));
+  const extrasTotal = extras.reduce((a,e) => a + e.amount, 0);
+  const c = s.currency || 'EUR', foreign = c !== 'EUR';
+  const totalCur = Math.round((base + extrasTotal)*100)/100;
+  const fxSet = foreign && has(p.fx) && +p.fx > 0;
+  const fx = foreign ? (fxSet ? +p.fx : +s.fxEstimate || 1) : 1;
+  return {hourly, rate, hours, base, extras, extrasTotal, c, foreign, totalCur, fx, fxEst: foreign && !fxSet,
+          amount: Math.round(totalCur / fx * 100)/100};
+}
+function portalText(p){
+  const cur = (n,c) => (+n||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' ' + c;
+  const parts = [];
+  if (p.hourly) parts.push(`${fmtH(p.hours)} h × ${cur(p.rate,p.c)} = ${cur(p.base,p.c)}`); else parts.push(cur(p.base,p.c));
+  p.extras.forEach(e => parts.push(`${e.desc || 'extra'}: ${cur(e.amount,p.c)}`));
+  let t = `Serviços de consultoria ${fmtNum(p.start)} a ${fmtNum(p.end)}: ` + parts.join('; ');
+  if (p.extras.length) t += `; total ${cur(p.totalCur,p.c)}`;
+  if (p.foreign) t += `. Taxa de referência BCE${p.fxDate ? ' de ' + fmtNum(p.fxDate) : ''}: 1 EUR = ${fx4(p.fx)} ${p.c}.`;
+  return t;
+}
+const fmtNum = s => D(s).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
+const fmtH = h => (+h).toLocaleString('pt-PT',{maximumFractionDigits:2});
+function breakdown(p){
+  const parts = [];
+  if (p.hourly) parts.push(`${fmtH(p.hours)} h × ${cur(p.rate,p.c)}`);
+  if (p.extrasTotal) parts.push(`${p.extras.length === 1 ? '1 extra' : p.extras.length + ' extras'} ${cur(p.extrasTotal,p.c)}`);
+  let t = parts.join(' + ');
+  if (p.foreign) t += (t ? ' = ' : '') + `${cur(p.totalCur,p.c)} a ${fx4(p.fx)}${p.fxEst ? ' (taxa estimada)' : ''}`;
+  return t;
+}
+function status(p){
+  const t = today();
+  if (p.paidDate) return {k:'paga', label:'Paga a ' + fmtD(p.paidDate), tone:'ok'};
+  if (p.issueDate) return {k:'emitida', label:'Emitida, por receber', tone:'wait'};
+  if (p.end < t) { const dl = addBiz(p.end,5); return dl < t ? {k:'atraso', label:'Prazo de emissão passou ('+fmtD(dl)+')', tone:'bad', deadline:dl} : {k:'emitir', label:'Emitir até '+fmtD(dl), tone:'warn', deadline:dl}; }
+  return {k:'curso', label:'Em curso, termina '+fmtD(p.end), tone:'neutral'};
+}
+const counted = p => !!p.issueDate || p.end < today();
+const dateOf = p => p.issueDate || p.end;
+
+function progressive(x){
+  let tax = 0, prev = 0;
+  for (const [lim, rate] of settings.brackets) {
+    const top = lim == null ? Infinity : Number(lim);
+    if (x > prev) tax += (Math.min(x, top) - prev) * Number(rate) / 100;
+    if (x <= top) break; prev = top;
+  }
+  return tax;
+}
+function irs(year){
+  const ps = allPeriods().filter(p => counted(p) && dateOf(p).startsWith(String(year)));
+  const gross = ps.reduce((a,p) => a+p.amount, 0);
+  const sy = +settings.activityStart.slice(0,4);
+  const red = year == sy ? 0.5 : year == sy+1 ? 0.75 : 1;
+  const coef = 0.75 * red;
+  const reg = !!settings.regressar && year >= +settings.regressarYear && year <= +settings.regressarYear + 4;
+  let taxable = gross * coef; if (reg) taxable *= 0.5;
+  const tax = Math.max(0, progressive(taxable) - (Number(settings.dedColeta)||0));
+  const received = allPeriods().filter(p => p.paidDate && p.paidDate.startsWith(String(year))).reduce((a,p) => a + (Number(p.paidAmount)||p.amount), 0);
+  return {gross, coef, red, reg, taxable, tax, received, count:ps.length};
+}
+function exemptUntil(){ return addDays(addMonths(settings.activityStart, 12), -1); }
+function ssQuarters(){
+  const out = [], ex = exemptUntil(), ps = allPeriods().filter(counted);
+  let y = +settings.activityStart.slice(0,4), q = Math.floor((+settings.activityStart.slice(5,7)-1)/3);
+  const endY = +today().slice(0,4) + 1;
+  while (y <= endY) {
+    const qs = `${y}-${String(q*3+1).padStart(2,'0')}-01`, qe = lastDayOfMonth(y, q*3+3);
+    const dy = q === 3 ? y+1 : y, dm = q === 3 ? 1 : q*3+4;
+    const declDate = lastDayOfMonth(dy, dm);
+    const gross = ps.filter(p => dateOf(p) >= qs && dateOf(p) <= qe).reduce((a,p) => a+p.amount, 0);
+    const exempt = declDate <= ex;
+    const monthly = exempt ? 0 : Math.max(20, gross * 0.7 / 3 * 0.214);
+    out.push({y, q:q+1, qs, qe, declDate, gross, exempt, monthly});
+    q++; if (q > 3) { q = 0; y++; }
+  }
+  return out;
+}
+
+/* ---------- render ---------- */
+function render(opts={}){
+  document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
+  const v = document.getElementById('view');
+  if (tab === 'definicoes' && opts.keepForm && v.querySelector('form.settings')) return;
+  v.innerHTML = tab === 'periodos' ? viewPeriods() : tab === 'contas' ? viewContas() : tab === 'calendario' ? viewCal() : tab === 'guia' ? viewGuide() : viewSettings();
+  if (tab === 'definicoes') bindSettings();
+}
+
+function viewPeriods(){
+  const ps = allPeriods(), t = today();
+  if (!ps.length) return `<div class="panel empty">O primeiro período começa a ${fmtD(settings.cycleStart,true)}. Muda a data em Definições se for preciso.</div>`;
+  const cur = ps.find(p => p.start <= t && p.end >= t) || ps[ps.length-1];
+  const len = diff(cur.start, cur.end) + 1;
+  const elapsed = Math.min(len, Math.max(0, diff(cur.start, t)+1));
+  const days = Array.from({length:len}, (_,i) => `<i class="${i < elapsed ? 'on' : ''}"></i>`).join('');
+  const st = status(cur);
+  const pending = ps.filter(p => ['emitir','atraso'].includes(status(p).k));
+  const noAmount = (settings.billingMode === 'hourly' ? !Number(settings.hourlyRate) : !Number(settings.defaultAmount)) ? `<div class="banner">Define ${settings.billingMode === 'hourly' ? 'o valor por hora' : 'o valor de cada período'} em Definições para os cálculos ficarem certos.</div>` : '';
+  const hero = `
+    <section class="receipt" aria-label="Período atual">
+      <div class="lbl">Período ${cur.n}</div>
+      <div class="range">${fmtD(cur.start)} a ${fmtD(cur.end,true)}</div>
+      <div class="amount">${eur(cur.amount)}</div>
+      ${breakdown(cur) ? `<div class="sync">${esc(breakdown(cur))}</div>` : ''}
+      <div class="days" aria-label="${elapsed} de ${len} dias">${days}</div>
+      <div class="foot"><span class="chip t-${st.tone}">${esc(st.label)}</span>
+        <button class="btn" data-open="${cur.start}">Abrir período</button></div>
+    </section>`;
+  const alert = pending.length ? `<div class="banner">${pending.length === 1 ? 'Há 1 período por faturar' : 'Há '+pending.length+' períodos por faturar'}: emite no Portal das Finanças e regista aqui o número da fatura.</div>` : '';
+  const rows = ps.slice().reverse().map(p => { const s = status(p); return `
+    <button class="row" data-open="${p.start}">
+      <span class="n">${p.n}</span>
+      <span><span class="r1">${fmtD(p.start)} a ${fmtD(p.end,true)}</span><br><span class="r2 chip t-${s.tone}">${esc(s.label)}</span>${p.invoiceNo ? ` <span class="sync">${esc(p.invoiceNo)}</span>` : ''}${breakdown(p) ? `<br><span class="sync">${esc(breakdown(p))}</span>` : ''}</span>
+      <span class="v">${eur(p.amount)}</span>
+    </button>`; }).join('');
+  return noAmount + hero + alert + `<h2>Todos os períodos</h2><div class="list">${rows}</div>`;
+}
+
+function viewContas(){
+  const years = [...new Set(allPeriods().filter(counted).map(p => +dateOf(p).slice(0,4)))];
+  const ty = +today().slice(0,4); if (!years.includes(ty)) years.push(ty); years.sort();
+  if (!selYear || !years.includes(selYear)) selYear = ty;
+  const r = irs(selYear);
+  const qs = ssQuarters().filter(q => q.declDate.startsWith(String(selYear)) || (q.y === selYear));
+  const ssYear = ssQuarters().filter(q => !q.exempt).reduce((a,q) => { // months paid in selYear
+    let sum = 0; for (let k=1;k<=3;k++){ const m = addMonths(q.declDate.slice(0,8)+'01', k); if (m.startsWith(String(selYear))) sum += q.monthly; } return a+sum; }, 0);
+  const reserveRule = r.received * (Number(settings.reservePct)||0) / 100;
+  const ivaPct = Math.min(100, r.gross / (Number(settings.ivaLimit)||15000) * 100);
+  const ivaCls = r.gross > settings.ivaLimit * 1.25 ? 'bad' : r.gross > settings.ivaLimit ? 'warn' : '';
+  const yearBtns = years.map(y => `<button data-year="${y}" aria-pressed="${y===selYear}">${y}</button>`).join('');
+  const ex = exemptUntil();
+  const ssRows = ssQuarters().filter(q => q.y === selYear).map(q => `
+      <dt>${q.q}.º trimestre${q.exempt ? '' : ', declarar até '+fmtD(q.declDate)}</dt>
+      <dd>${q.exempt ? '<span class="chip t-ok">isento</span>' : eur(q.monthly)+'/mês'}</dd>`).join('');
+  const est = allPeriods().filter(p => p.fxEst && counted(p) && dateOf(p).startsWith(String(selYear))).length;
+  return `
+  <div class="yearsel">${yearBtns}</div>
+  ${est ? `<div class="banner">${est === 1 ? '1 período usa' : est + ' períodos usam'} a taxa de câmbio estimada. Regista a taxa do BCE de cada fatura para os valores ficarem certos.</div>` : ''}
+  <section class="panel">
+    <h3>IRS de ${selYear}</h3>
+    <dl class="kv">
+      <dt>Faturado ou a faturar (${r.count} períodos)</dt><dd>${eur(r.gross)}</dd>
+      <dt>Coeficiente aplicado</dt><dd>${(r.coef*100).toLocaleString('pt-PT')}%</dd>
+      ${r.reg ? `<dt>Regime Regressar</dt><dd>só 50% tributado</dd>` : ''}
+      <dt>Rendimento tributável</dt><dd>${eur(r.taxable)}</dd>
+      <dt>Deduções à coleta</dt><dd>−${eur(settings.dedColeta)}</dd>
+      <dt>IRS estimado</dt><dd class="total">${eur(r.tax)}</dd>
+    </dl>
+    <p class="note">Regime simplificado com coeficiente de 75%${r.red < 1 ? ', reduzido em ' + Math.round((1-r.red)*100) + '% por ser o ' + (r.red === .5 ? '1.º' : '2.º') + ' ano de atividade' : ''}. Calculado só sobre este rendimento, em tributação separada, sem outros rendimentos nem deduções além das indicadas. Pagas na declaração de IRS do ano seguinte.</p>
+  </section>
+  <section class="panel">
+    <h3>Segurança Social</h3>
+    <dl class="kv">${ssRows || '<dt>Sem trimestres neste ano</dt><dd></dd>'}
+      <dt>A pagar em ${selYear}</dt><dd class="total">${eur(ssYear)}</dd></dl>
+    <p class="note">Isenção do 1.º ano até ${fmtD(ex,true)}. Depois, a contribuição mensal é 21,4% sobre 70% da média mensal do trimestre declarado (mínimo 20 €), paga nos três meses seguintes à declaração.</p>
+  </section>
+  <section class="panel">
+    <h3>Pôr de parte</h3>
+    <dl class="kv">
+      <dt>Recebido em ${selYear}</dt><dd>${eur(r.received)}</dd>
+      <dt>Regra dos ${settings.reservePct}%</dt><dd>${eur(reserveRule)}</dd>
+      <dt>Estimativa IRS + Segurança Social</dt><dd class="total">${eur(r.tax + ssYear)}</dd>
+    </dl>
+    <p class="note">Se a estimativa ficar acima da regra, guarda o valor mais alto.</p>
+  </section>
+  <section class="panel">
+    <h3>Limite do IVA (art. 53.º)</h3>
+    <dl class="kv"><dt>Faturado em ${selYear}</dt><dd>${eur(r.gross)} de ${eur(settings.ivaLimit)}</dd></dl>
+    <div class="bar ${ivaCls}"><span style="width:${ivaPct}%"></span></div>
+    <p class="note">${ivaCls === 'bad' ? 'Passaste o limite em mais de 25%: sais da isenção de imediato. Fala com o contabilista.' : ivaCls === 'warn' ? 'Passaste o limite: a isenção termina no ano seguinte. Fala com o contabilista.' : 'Os serviços a esta empresa não levam IVA de qualquer forma; confirma com o contabilista se contam para este limite.'}</p>
+  </section>`;
+}
+
+function viewCal(){
+  const t = today(), items = [], horizon = addMonths(t, 15);
+  allPeriods().forEach(p => { const s = status(p); if (s.deadline) items.push({d:s.deadline, t:`Emitir a fatura do período ${p.n}`, s:`${fmtD(p.start)} a ${fmtD(p.end)}, ${eur(p.amount)}`, tone:s.tone}); });
+  const ex = exemptUntil();
+  if (ex >= t) items.push({d:addDays(ex,1), t:'Fim da isenção da Segurança Social', s:'A partir daqui passas a declarar e a pagar contribuições.'});
+  ssQuarters().filter(q => !q.exempt && q.declDate >= t && q.declDate <= horizon).forEach(q => items.push({d:q.declDate, t:`Declaração trimestral à Segurança Social`, s:`Rendimentos do ${q.q}.º trimestre de ${q.y}: ${eur(q.gross)}`}));
+  const sy = +settings.activityStart.slice(0,4);
+  for (let y = sy; y <= +t.slice(0,4); y++) {
+    const r = irs(y), ds = `${y+1}-06-30`;
+    if (ds >= t) items.push({d:ds, t:`Entregar o IRS de ${y}`, s:`Prazo de 1 de abril a 30 de junho. Estimativa: ${eur(r.tax)}`});
+    const pc = r.tax * 0.765 / 3;
+    if (pc > 0) [[7,20],[9,20],[12,20]].forEach(([m,d]) => { const dd = `${y+2}-${String(m).padStart(2,'0')}-${d}`; if (dd >= t && dd <= horizon) items.push({d:dd, t:'Pagamento por conta de IRS', s:`Estimativa com base no IRS de ${y}: ${eur(pc)}`}); });
+  }
+  items.sort((a,b) => a.d < b.d ? -1 : 1);
+  if (!items.length) return `<div class="panel empty">Sem obrigações nos próximos meses.</div>`;
+  return `<div class="panel"><ul class="cal">${items.map(i => `
+    <li><div class="d">${D(i.d).getUTCDate()}<small>${D(i.d).toLocaleDateString('pt-PT',{month:'short',year:'numeric',timeZone:'UTC'})}</small></div>
+    <div><h3>${esc(i.t)}</h3><div class="sync">${esc(i.s)}</div>${i.tone ? `<span class="chip t-${i.tone}" style="margin-top:6px">${i.tone==='bad'?'Atrasado':'Pendente'}</span>` : ''}</div></li>`).join('')}</ul>
+    <p class="note">Datas indicativas. Os pagamentos por conta só existem se a AT os calcular na tua nota de liquidação.</p></div>`;
+}
+
+function viewGuide(){
+  const ex = fmtD(addDays(exemptUntil(),1), true);
+  return `<div class="guide">
+  <h2>Antes de começar</h2>
+  <p class="when">Faz-se uma vez.</p>
+  <ol class="steps">
+    <li><div><h3>Preenche as Definições</h3>
+      <p>Confirma a data de início de atividade, a moeda (dólares), o valor por hora e as horas habituais por período.</p></div></li>
+    <li><div><h3>Põe os teus dados e os da empresa</h3>
+      <p>Ainda em Definições: nome, NIF, morada e email, e o nome e a morada da empresa. É o que aparece na invoice em inglês.</p></div></li>
+    <li><div><h3>Confirma dois pontos com o contabilista</h3>
+      <p>Se o regime Regressar se aplica a ti e se os escalões de IRS estão atualizados. A app usa estes dois dados para estimar o IRS.</p></div></li>
+  </ol>
+
+  <h2>Durante cada período</h2>
+  <p class="when">De 4 em 4 semanas. Na aba <kbd>Períodos</kbd>, toca no período em curso.</p>
+  <ol class="steps">
+    <li><div><h3>Regista as horas</h3>
+      <p>Mete as horas reais do período. Se não preencheres nada, a app usa as horas habituais.</p></div></li>
+    <li><div><h3>Acrescenta os extras</h3>
+      <p>Toca em <kbd>Adicionar extra</kbd> para cada valor a mais: trabalho adicional, despesas a reembolsar, etc. Descrição e valor em dólares.</p></div></li>
+    <li><div><h3>Toca em Guardar</h3>
+      <p>Podes ir atualizando ao longo do período. O total aparece em dólares e em euros.</p></div></li>
+  </ol>
+
+  <h2>No fim do período: emitir a fatura</h2>
+  <p class="when">Até 5 dias úteis depois do último dia do período. A app avisa-te.</p>
+  <ol class="steps">
+    <li><div><h3>Regista a taxa do BCE</h3>
+      <p>No dia em que vais emitir, abre o período, preenche a data de emissão e toca em <kbd>Buscar taxa do BCE</kbd>. A taxa e a data dela ficam preenchidas.</p>
+      <div class="tip">O BCE publica a taxa por volta das 15h. Se ainda não tiver saído, a app usa automaticamente a do último dia útil, que é a correta nesse caso.</div></div></li>
+    <li><div><h3>Copia a descrição para o Portal</h3>
+      <p>Dentro do período tens o campo <kbd>Descrição para a fatura do Portal</kbd>. Toca nele e copia o texto.</p></div></li>
+    <li><div><h3>Emite no Portal das Finanças</h3>
+      <p>Em Faturas e Recibos Verdes, escolhe Emitir:</p>
+      <ul>
+        <li><strong>Tipo:</strong> Fatura, se ainda não te pagaram; Fatura-Recibo, se já pagaram.</li>
+        <li><strong>Cliente:</strong> a empresa, com país Estados Unidos.</li>
+        <li><strong>Descrição:</strong> cola o texto copiado.</li>
+        <li><strong>Valor:</strong> o total em euros que a app mostra.</li>
+        <li><strong>IVA:</strong> sem IVA, motivo art. 6.º, n.º 6, al. a) do CIVA.</li>
+        <li><strong>Retenção na fonte:</strong> sem retenção.</li>
+      </ul></div></li>
+    <li><div><h3>Regista a fatura na app</h3>
+      <p>Volta ao período e preenche a data de emissão e o número da fatura do Portal. Guarda.</p></div></li>
+    <li><div><h3>Envia à empresa</h3>
+      <p>Toca em <kbd>Invoice em inglês</kbd> e depois em <kbd>Imprimir ou guardar PDF</kbd>. Envia o PDF por email, junto com o PDF da fatura do Portal. Guarda esse email.</p></div></li>
+  </ol>
+
+  <h2>Quando o pagamento chega</h2>
+  <ol class="steps">
+    <li><div><h3>Emite o recibo, se for o caso</h3>
+      <p>Se emitiste uma Fatura (e não uma Fatura-Recibo), emite agora no Portal o Recibo dessa fatura, com o mesmo valor em euros.</p></div></li>
+    <li><div><h3>Regista o pagamento na app</h3>
+      <p>Preenche a data de pagamento e o valor que entrou no banco em euros. Pode ser um pouco diferente da fatura por causa do câmbio e das comissões, e é normal.</p></div></li>
+    <li><div><h3>Põe dinheiro de parte</h3>
+      <p>Vê na aba <kbd>Contas</kbd> quanto deves ter guardado e transfere para uma conta à parte.</p></div></li>
+  </ol>
+
+  <h2>Ao longo do ano</h2>
+  <p class="when">A aba <kbd>Calendário</kbd> mostra as datas certas.</p>
+  <ol class="steps">
+    <li><div><h3>Segurança Social</h3>
+      <p>Estás isento até ${ex}. A partir daí, entregas a declaração trimestral na Segurança Social Direta, em janeiro, abril, julho e outubro, e pagas todos os meses.</p></div></li>
+    <li><div><h3>IRS</h3>
+      <p>Entre 1 de abril e 30 de junho do ano seguinte. As faturas emitidas no Portal já aparecem lá. Leva ao contabilista o valor estimado em <kbd>Contas</kbd> para comparar.</p></div></li>
+    <li><div><h3>Pagamentos por conta</h3>
+      <p>A partir do 2.º ano, se a AT os calcular, pagas em julho, setembro e dezembro.</p></div></li>
+    <li><div><h3>Cópia de segurança</h3>
+      <p>No fim de cada trimestre, em Definições, toca em <kbd>Exportar CSV</kbd> e envia ao contabilista.</p></div></li>
+  </ol>
+  <h2>Noutro dispositivo</h2>
+  <ol class="steps">
+    <li><div><h3>Abre o endereço da app</h3><p>No browser do outro dispositivo, abre o mesmo endereço do GitHub Pages.</p></div></li>
+    <li><div><h3>Liga ao Supabase e entra</h3><p>Cola o URL e a chave do Supabase e entra com o mesmo email e palavra-passe. Os dados aparecem sozinhos.</p></div></li>
+    <li><div><h3>Instala</h3><p>No iPhone: Safari, Partilhar, Adicionar ao ecrã principal. No Windows: Edge ou Chrome, ícone de instalar na barra de endereço. No Mac: Safari, Ficheiro, Adicionar à Dock.</p></div></li>
+  </ol>
+  <p class="note">Este guia é uma ajuda prática, não substitui o contabilista. Os menus do Portal podem ter nomes ligeiramente diferentes.</p>
+  </div>`;
+}
+
+function viewSettings(){
+  const s = settings;
+  const f = (k,l,type='text',extra='') => `<label>${l}<input name="${k}" type="${type}" value="${esc(s[k])}" ${extra}></label>`;
+  const br = s.brackets.map(([l,r]) => `${l==null?'acima':l};${r}`).join('\n');
+  return `<form class="settings" autocomplete="off" onsubmit="return false">
+  <fieldset><legend>Atividade e períodos</legend>
+    <div class="grid2">${f('activityStart','Início de atividade','date')}${f('cycleStart','Início do 1.º período','date')}</div>
+    ${f('cycleDays','Dias por período','number','min="7" max="62"')}
+  </fieldset>
+  <fieldset><legend>Como cobras</legend>
+    <div class="grid2"><label>Moeda acordada
+      <select name="currency">
+        <option value="USD" ${s.currency==='USD'?'selected':''}>Dólares (USD)</option>
+        <option value="EUR" ${s.currency==='EUR'?'selected':''}>Euros (EUR)</option>
+      </select></label>
+      ${s.currency!=='EUR' ? f('fxEstimate','Taxa estimada (1 EUR = x '+s.currency+')','number','step="0.0001" min="0.1"') : ''}</div>
+    ${s.currency!=='EUR' ? '<p class="note">A taxa estimada só serve para períodos sem taxa BCE registada. Na fatura usa sempre a taxa do BCE do dia da emissão.</p>' : ''}
+    <label>Modo de cobrança
+      <select name="billingMode">
+        <option value="hourly" ${s.billingMode==='hourly'?'selected':''}>Por hora</option>
+        <option value="fixed" ${s.billingMode==='fixed'?'selected':''}>Valor fixo por período</option>
+      </select></label>
+    ${s.billingMode==='hourly'
+      ? `<div class="grid2">${f('hourlyRate','Valor por hora ('+(s.currency||'EUR')+')','number','step="0.01" min="0"')}${f('defaultHours','Horas habituais por período','number','step="0.25" min="0"')}</div>
+         <p class="note">As horas habituais são o ponto de partida; em cada período registas as horas reais.</p>`
+      : f('defaultAmount','Valor por período ('+(s.currency||'EUR')+')','number','step="0.01" min="0"')}
+    <p class="note">Os extras (despesas, trabalho adicional) acrescentam-se dentro de cada período.</p>
+  </fieldset>
+  <fieldset><legend>Impostos</legend>
+    <div class="grid2">${f('reservePct','Pôr de parte (%)','number','min="0" max="60"')}${f('dedColeta','Deduções à coleta (€)','number','step="1" min="0"')}</div>
+    <label class="check"><input type="checkbox" name="regressar" ${s.regressar?'checked':''}> Aplicar regime Regressar (50% do rendimento isento)</label>
+    ${f('regressarYear','1.º ano de residência para o Regressar','number','min="2019" max="2030"')}
+    <label>Menção de IVA nas faturas
+      <select name="ivaMode">
+        <option value="art6" ${s.ivaMode==='art6'?'selected':''}>Não sujeito, art. 6.º, n.º 6, al. a) do CIVA</option>
+        <option value="art53" ${s.ivaMode==='art53'?'selected':''}>Isento, art. 53.º do CIVA</option>
+      </select></label>
+    ${f('ivaLimit','Limite anual do art. 53.º (€)','number','step="1"')}
+    <label>Escalões de IRS (limite;taxa, um por linha)<textarea name="brackets">${esc(br)}</textarea></label>
+    <p class="note">Valores de referência; confirma a tabela do ano com o contabilista.</p>
+  </fieldset>
+  <fieldset><legend>Para a invoice em inglês</legend>
+    ${f('myName','O teu nome')}${f('myNif','NIF')}${f('myAddress','Morada')}${f('myEmail','Email','email')}
+    ${f('clientName','Empresa cliente')}<label>Morada do cliente<textarea name="clientAddress">${esc(s.clientAddress)}</textarea></label>
+    ${f('serviceDesc','Descrição do serviço')}
+    <label>Dados de pagamento (opcional)<textarea name="payment" placeholder="Ex.: transferência para o banco X; pede o IBAN por email">${esc(s.payment)}</textarea></label>
+  </fieldset>
+  <fieldset><legend>Exportar e importar</legend>
+    <p class="note" style="margin-top:0">O CSV é para o contabilista. A cópia de segurança (JSON) guarda tudo e pode ser importada de volta.</p>
+    <div class="actions"><button class="btn" type="button" id="expCsv">Exportar CSV</button><button class="btn" type="button" id="expJson">Cópia de segurança</button><button class="btn" type="button" id="impJson">Importar</button></div>
+    <input type="file" id="impFile" accept="application/json,.json" hidden>
+  </fieldset>
+  <fieldset><legend>Conta</legend>
+    <p class="note" style="margin-top:0">Sessão iniciada como ${esc(session && session.user ? session.user.email : '')}.</p>
+    <div class="actions"><button class="btn" type="button" id="logout">Terminar sessão</button><button class="btn danger" type="button" id="resetCfg">Mudar ligação ao Supabase</button></div>
+  </fieldset>
+  </form>`;
+}
+
+function bindSettings(){
+  const form = document.querySelector('form.settings');
+  form.addEventListener('input', e => {
+    const el = e.target, k = el.name; if (!k) return;
+    let v = el.type === 'checkbox' ? el.checked : el.value;
+    if (k === 'brackets') {
+      const rows = v.split('\n').map(l => l.split(';').map(x => x.trim())).filter(r => r.length === 2 && r[1] !== '' && !isNaN(+r[1]));
+      if (!rows.length) return;
+      v = rows.map(([l,r]) => [ (l==='' || isNaN(+l)) ? null : +l, +r ]);
+    } else if (el.type === 'number') { if (v === '') return; v = +v; }
+    else if (el.type === 'date' && !v) return;
+    if (k === 'cycleDays' && (v < 7 || v > 62)) return;
+    saveSettings({[k]: v});
+    if (k === 'billingMode' || k === 'currency') { tab = 'definicoes'; document.getElementById('view').innerHTML = viewSettings(); bindSettings(); }
+  });
+  document.getElementById('expCsv').onclick = () => exportFile('csv');
+  document.getElementById('expJson').onclick = () => exportFile('json');
+  const fi = document.getElementById('impFile');
+  document.getElementById('impJson').onclick = () => fi.click();
+  fi.onchange = () => { if (fi.files[0]) importFile(fi.files[0]); fi.value = ''; };
+  document.getElementById('logout').onclick = async () => { if (!confirm('Terminar sessão neste dispositivo?')) return; await sb.auth.signOut(); localStorage.removeItem(CACHE_KEY); localStorage.removeItem(PEND_KEY); location.reload(); };
+  document.getElementById('resetCfg').onclick = () => { if (!confirm('Apagar a ligação ao Supabase neste dispositivo? Os dados no Supabase não são apagados.')) return; localStorage.removeItem(CFG_KEY); location.reload(); };
+}
+
+/* ---------- period dialog ---------- */
+const dlg = document.getElementById('dlg'), dlgBody = document.getElementById('dlgBody');
+function extraRow(e={}){
+  return `<div class="extra grid3"><input name="xdesc" placeholder="Descrição" value="${esc(e.desc||'')}" aria-label="Descrição do extra">
+    <input name="xamount" type="number" step="0.01" placeholder="${settings.currency||'EUR'}" value="${has(e.amount) ? e.amount : ''}" aria-label="Valor do extra">
+    <button class="x" type="button" data-rmx aria-label="Remover extra">×</button></div>`;
+}
+function openPeriod(start){
+  const p = allPeriods().find(x => x.start === start); if (!p) return;
+  const own = stored[start] || {}, s = settings;
+  const billing = p.hourly
+    ? `<div class="grid2">
+        <label>Horas<input name="hours" type="number" step="0.25" min="0" value="${has(own.hours) ? own.hours : ''}" placeholder="${fmtH(s.defaultHours||0)}"></label>
+        <label>Valor por hora (${s.currency||'EUR'})<input name="rate" type="number" step="0.01" min="0" value="${has(own.rate) ? own.rate : ''}" placeholder="${s.hourlyRate||0}"></label>
+      </div>`
+    : `<label>Valor base (${s.currency||'EUR'})<input name="base" type="number" step="0.01" min="0" value="${has(own.base) ? own.base : has(own.amount) ? own.amount : ''}" placeholder="${s.defaultAmount||0}"></label>`;
+  dlgBody.innerHTML = `
+    <header><div><h3>Período ${p.n}</h3><div class="sync">${fmtD(p.start)} a ${fmtD(p.end,true)}</div></div><button class="x" aria-label="Fechar" data-close>×</button></header>
+    <form id="pform" onsubmit="return false">
+      ${billing}
+      <label style="margin-top:14px">Extras</label>
+      <div id="extras">${p.extras.map(extraRow).join('')}</div>
+      <button class="btn" type="button" id="addx" style="margin-top:8px">Adicionar extra</button>
+      ${p.foreign ? `<div class="grid2">
+        <label>Taxa BCE (1 EUR = x ${p.c})<input name="fx" type="number" step="0.0001" min="0.1" value="${has(own.fx) ? own.fx : ''}" placeholder="${fx4(s.fxEstimate)} (estimada)"></label>
+        <label>Data da taxa<input name="fxDate" type="date" value="${esc(own.fxDate||'')}"></label></div>
+        <div class="fxrow"><button class="btn" type="button" id="getfx">Buscar taxa do BCE</button><span class="sync" id="fxmsg">Usa a data de emissão, ou hoje se estiver vazia.</span></div>` : ''}
+      <div class="totline"><span>Total do período</span><strong id="ptotal">${p.foreign ? cur(p.totalCur,p.c)+' = ' : ''}${eur(p.amount)}</strong></div>
+      <label>Descrição para a fatura do Portal<textarea id="ptext" readonly rows="3">${esc(portalText(p))}</textarea></label>
+      <div class="grid2">
+        <label>Data de emissão<input name="issueDate" type="date" value="${esc(own.issueDate||'')}"></label>
+        <label>N.º da fatura no Portal<input name="invoiceNo" value="${esc(own.invoiceNo||'')}" placeholder="FR ATSIRE01FR/1"></label>
+      </div>
+      <div class="grid2">
+        <label>Data de pagamento<input name="paidDate" type="date" value="${esc(own.paidDate||'')}"></label>
+        <label>Valor recebido (€)<input name="paidAmount" type="number" step="0.01" min="0" value="${esc(own.paidAmount ?? '')}" placeholder="${p.amount}"></label>
+      </div>
+      <label>Notas<textarea name="notes">${esc(own.notes||'')}</textarea></label>
+      <div class="actions">
+        <button class="btn primary" type="button" id="psave">Guardar</button>
+        <button class="btn" type="button" id="pinv">Invoice em inglês</button>
+        ${stored[start] ? '<button class="btn danger" type="button" id="pclear">Limpar dados</button>' : ''}
+      </div>
+    </form>`;
+  if (!dlg.open) dlg.showModal();
+  const form = document.getElementById('pform'), box = document.getElementById('extras');
+  const read = () => {
+    const o = {...own}; delete o.amount;
+    ['hours','rate','base','fx','fxDate','issueDate','invoiceNo','paidDate','paidAmount','notes'].forEach(k => {
+      const el = form.elements[k]; if (!el) return;
+      if (el.value === '') delete o[k]; else o[k] = ['hours','rate','base','fx','paidAmount'].includes(k) ? +el.value : el.value;
+    });
+    if (!p.hourly && !has(o.base) && has(own.amount)) o.base = +own.amount;
+    o.extras = [...box.querySelectorAll('.extra')].map(r => ({desc:r.querySelector('[name=xdesc]').value.trim(), amount:+r.querySelector('[name=xamount]').value || 0})).filter(e => e.desc || e.amount);
+    if (!o.extras.length) delete o.extras;
+    if (!o.end) o.end = p.end;
+    return o;
+  };
+  const refresh = () => { const o = read(), q = {...p, ...o, ...calc(o)};
+    document.getElementById('ptotal').textContent = (q.foreign ? cur(q.totalCur,q.c)+' = ' : '') + eur(q.amount);
+    document.getElementById('ptext').value = portalText(q); };
+  document.getElementById('ptext').addEventListener('focus', e => e.target.select());
+  form.addEventListener('input', refresh);
+  const fxb = document.getElementById('getfx');
+  if (fxb) fxb.onclick = async () => {
+    const msg = document.getElementById('fxmsg'); msg.textContent = 'A buscar…';
+    try {
+      const r = await fetchFx(form.elements.issueDate.value);
+      form.elements.fx.value = r.fx; form.elements.fxDate.value = r.date;
+      msg.textContent = `Taxa de ${fmtD(r.date,true)}: 1 EUR = ${fx4(r.fx)} ${settings.currency}`; refresh();
+    } catch(e) { msg.textContent = 'Não foi possível obter a taxa. Verifica a ligação ou preenche à mão.'; }
+  };
+  document.getElementById('addx').onclick = () => { box.insertAdjacentHTML('beforeend', extraRow()); box.lastElementChild.querySelector('input').focus(); };
+  box.addEventListener('click', e => { if (e.target.closest('[data-rmx]')) { e.target.closest('.extra').remove(); refresh(); } });
+  document.getElementById('psave').onclick = () => { savePeriod(start, read()); dlg.close(); };
+  document.getElementById('pinv').onclick = () => { const o = read(); savePeriod(start, o); showInvoice(allPeriods().find(x => x.start === start)); };
+  const c = document.getElementById('pclear'); if (c) c.onclick = () => { delete stored[start]; persist('p_'+start, null, 0); render(); dlg.close(); };
+}
+
+function invoiceHTML(p){
+  const s = settings;
+  const vat = s.ivaMode === 'art53' ? 'VAT exempt under Article 53 of the Portuguese VAT Code (CIVA).' : 'VAT not applicable: services supplied to a business established outside the EU (Article 6(6)(a) of the Portuguese VAT Code).';
+  const ref = p.invoiceNo || ('Draft ' + p.start);
+  const issue = p.issueDate || today();
+  const fd = x => D(x).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
+  const money = n => new Intl.NumberFormat('en-US',{style:'currency',currency:p.c||'EUR'}).format(n||0);
+  const amt = money(p.totalCur);
+  const nl = t => esc(t).replace(/\n/g,'<br>');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Invoice ${esc(ref)}</title>
+<style>body{font-family:"Helvetica Neue",Arial,sans-serif;color:#17231D;max-width:720px;margin:40px auto;padding:0 28px;font-size:14px;line-height:1.5}
+h1{font-size:28px;margin:0 0 4px;letter-spacing:-.02em}.muted{color:#5A6A61}.top{display:flex;justify-content:space-between;gap:24px;border-bottom:3px solid #1F7A55;padding-bottom:18px}
+.cols{display:flex;gap:40px;margin:24px 0}.cols div{flex:1}h4{margin:0 0 6px;font-size:12px;color:#5A6A61;font-weight:600}
+table{width:100%;border-collapse:collapse;margin-top:8px}th,td{text-align:left;padding:10px 0;border-bottom:1px solid #D7E1DA}th{font-size:12px;color:#5A6A61;font-weight:600}td.r,th.r{text-align:right}
+.total td{font-weight:700;font-size:17px;border-bottom:0}.foot{margin-top:28px;font-size:12px;color:#5A6A61}@media print{body{margin:0}}</style></head><body class="inv">
+<div class="top"><div><h1>Invoice</h1><div class="muted">${esc(ref)}</div></div><div style="text-align:right"><strong>${esc(s.myName||'Your name')}</strong><br>${s.myNif?'NIF (PT) '+esc(s.myNif)+'<br>':''}${nl(s.myAddress)}${s.myEmail?'<br>'+esc(s.myEmail):''}</div></div>
+<div class="cols"><div><h4>Bill to</h4><strong>${esc(s.clientName||'Client')}</strong><br>${nl(s.clientAddress)}</div>
+<div><h4>Invoice date</h4>${fd(issue)}<h4 style="margin-top:12px">Service period</h4>${fd(p.start)} to ${fd(p.end)}</div></div>
+<table><thead><tr><th>Description</th><th class="r">Amount (${p.c||'EUR'})</th></tr></thead><tbody>
+<tr><td>${esc(s.serviceDesc)}<br><span class="muted">Period ${p.n}: ${fd(p.start)} to ${fd(p.end)}${p.hourly ? ` (${(+p.hours).toLocaleString('en-GB',{maximumFractionDigits:2})} hours at ${money(p.rate)}/hour)` : ''}</span></td><td class="r">${money(p.base)}</td></tr>
+${p.extras.map(e => `<tr><td>${esc(e.desc || 'Additional charge')}</td><td class="r">${money(e.amount)}</td></tr>`).join('')}
+<tr class="total"><td>Total due</td><td class="r">${amt}</td></tr></tbody></table>
+<div class="foot">${vat}<br>No Portuguese withholding tax applies.${p.foreign && !p.fxEst ? `<br>EUR equivalent for Portuguese tax purposes: ${new Intl.NumberFormat('en-IE',{style:'currency',currency:'EUR'}).format(p.amount)} (ECB reference rate${p.fxDate ? ' of ' + fd(p.fxDate) : ''}: 1 EUR = ${(+p.fx).toFixed(4)} ${p.c}).` : ''}${s.payment?'<br><br><strong>Payment</strong><br>'+nl(s.payment):''}${p.invoiceNo?'<br><br>Portuguese tax invoice (fatura-recibo) no. '+esc(p.invoiceNo)+' issued via the Portuguese Tax Authority portal.':''}</div>
+</body></html>`;
+}
+function showInvoice(p){
+  const html = invoiceHTML(p);
+  dlgBody.innerHTML = `<header><div><h3>Invoice em inglês</h3><div class="sync">Documento comercial para o cliente. A fatura oficial é a do Portal.</div></div><button class="x" aria-label="Fechar" data-close>×</button></header>
+    <iframe class="preview" title="Pré-visualização da invoice"></iframe>
+    <div class="actions"><button class="btn primary" id="iprint">Imprimir ou guardar PDF</button><button class="btn" id="isave">Guardar HTML</button><button class="btn" data-back="${p.start}">Voltar ao período</button></div>
+    <p class="note">Em Imprimir, escolhe Guardar como PDF. No iPhone, abre a pré-visualização de impressão e partilha-a.</p>`;
+  dlgBody.querySelector('iframe').srcdoc = html;
+  const fname = `invoice-${(p.invoiceNo||p.start).replace(/[^\w-]+/g,'_')}`;
+  document.getElementById('isave').onclick = () => saveFile(fname + '.html', html, 'text/html');
+  document.getElementById('iprint').onclick = () => {
+    const f = dlgBody.querySelector('iframe');
+    try { f.contentWindow.focus(); f.contentWindow.print(); }
+    catch(e) { const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); } }
+  };
+  if (!dlg.open) dlg.showModal();
+}
+
+async function exportFile(kind){
+  const ps = allPeriods();
+  let data, name;
+  if (kind === 'json') {
+    const docs = {settings}; Object.entries(stored).forEach(([k,v]) => docs['p_'+k] = v);
+    data = JSON.stringify({app:'recibos', version:1, exportedAt:new Date().toISOString(), docs}, null, 2); name = `recibos-backup-${today()}.json`;
+  }
+  else {
+    const head = ['periodo','inicio','fim','moeda','horas','valor_hora','base','extras','extras_descricao','total_moeda','taxa_bce','data_taxa','total_eur','data_emissao','n_fatura','data_pagamento','valor_recebido_eur','notas'];
+    const q = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+    data = [head.join(';')].concat(ps.map(p => [p.n,p.start,p.end,p.c,p.hourly?String(p.hours).replace('.',','):'',p.hourly?String(p.rate).replace('.',','):'',String(p.base).replace('.',','),String(p.extrasTotal).replace('.',','),p.extras.map(e=>e.desc+' ('+e.amount+')').join(' | '),String(p.totalCur).replace('.',','),p.foreign?(p.fxEst?'estimada '+p.fx:String(p.fx)).replace('.',','):'',p.fxDate||'',String(p.amount).replace('.',','),p.issueDate,p.invoiceNo,p.paidDate,p.paidAmount!=null?String(p.paidAmount).replace('.',','):'',p.notes].map(q).join(';'))).join('\n');
+    data = '\ufeff' + data; name = `recibos-${today()}.csv`;
+  }
+  await saveFile(name, data, kind === 'json' ? 'application/json' : 'text/csv');
+}
+function importFile(file){
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      const j = JSON.parse(rd.result); let st = null; const per = {};
+      if (j.docs) { st = j.docs.settings || {}; Object.entries(j.docs).forEach(([k,v]) => { if (k.startsWith('p_')) per[k.slice(2)] = v; }); }
+      else if (j.settings && Array.isArray(j.periods)) {
+        st = j.settings;
+        const keep = ['end','hours','rate','base','fx','fxDate','extras','issueDate','invoiceNo','paidDate','paidAmount','notes'];
+        j.periods.forEach(p => { const o = {}; keep.forEach(k => { if (p[k] != null && p[k] !== '' && !(k === 'extras' && !p[k].length)) o[k] = p[k]; }); per[p.start] = o; });
+      } else throw new Error('formato');
+      if (!confirm('Isto substitui todos os dados atuais pelos do ficheiro. Continuar?')) return;
+      replaceAll(st, per); setSync('Dados importados');
+    } catch(e) { alert('Este ficheiro não é uma cópia de segurança válida da app Recibos.'); }
+  };
+  rd.readAsText(file);
+}
+
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-tab],[data-open],[data-close],[data-year],[data-back]'); if (!t) return;
+  if (t.dataset.tab) { tab = t.dataset.tab; render(); }
+  else if (t.dataset.open) openPeriod(t.dataset.open);
+  else if (t.dataset.back) openPeriod(t.dataset.back);
+  else if ('close' in t.dataset) dlg.close();
+  else if (t.dataset.year) { selYear = +t.dataset.year; render(); }
+});
+
+/* ---------- entrada ---------- */
+function showGate(mode, extra){
+  document.body.classList.add('gated');
+  const v = document.getElementById('view');
+  if (mode === 'setup') {
+    v.innerHTML = `<div class="gate panel"><h2>Ligar ao Supabase</h2>
+      <p class="note" style="margin-top:0">Só é preciso uma vez em cada dispositivo. Encontras os dois valores no Supabase, em Project Settings, API.</p>
+      <form id="gform" onsubmit="return false">
+        <label>Project URL<input name="url" type="url" placeholder="https://abcd1234.supabase.co" autocomplete="off" required></label>
+        <label>Chave pública (anon ou publishable)<input name="key" autocomplete="off" required></label>
+        <div class="err" id="gerr"></div>
+        <div class="actions"><button class="btn primary" id="gsave">Ligar</button></div></form></div>`;
+    document.getElementById('gsave').onclick = () => {
+      const f = document.getElementById('gform'), url = f.url.value.trim().replace(/\/+$/,''), key = f.key.value.trim();
+      if (!/^https:\/\/\S+$/.test(url)) { document.getElementById('gerr').textContent = 'O URL tem de começar por https://'; return; }
+      if (key.length < 20) { document.getElementById('gerr').textContent = 'A chave parece incompleta. Copia-a outra vez.'; return; }
+      saveJSON(CFG_KEY, {url, key}); boot();
+    };
+  } else if (mode === 'login') {
+    v.innerHTML = `<div class="gate panel"><h2>Entrar</h2>
+      <form id="lform" onsubmit="return false">
+        <label>Email<input name="email" type="email" autocomplete="username" required></label>
+        <label>Palavra-passe<input name="pw" type="password" autocomplete="current-password" minlength="8" required></label>
+        <div class="err" id="lerr"></div>
+        <div class="actions"><button class="btn primary" id="lin">Entrar</button><button class="btn" id="lup">Criar conta</button></div>
+      </form>
+      <p class="note"><button class="linkbtn" id="lcfg">Mudar ligação ao Supabase</button></p></div>`;
+    const f = document.getElementById('lform'), err = document.getElementById('lerr');
+    const go = async (signup) => {
+      err.textContent = '';
+      const email = f.email.value.trim(), password = f.pw.value;
+      if (!email || password.length < 8) { err.textContent = 'Indica o email e uma palavra-passe com pelo menos 8 caracteres.'; return; }
+      let r;
+      try { r = signup ? await sb.auth.signUp({email, password}) : await sb.auth.signInWithPassword({email, password}); }
+      catch(e) { err.textContent = 'Sem ligação ao Supabase. Confirma o URL e a chave.'; return; }
+      if (r.error) { err.textContent = signup ? 'Não foi possível criar a conta: ' + r.error.message : 'Email ou palavra-passe errados.'; return; }
+      if (!r.data.session) { err.textContent = 'Conta criada. Confirma o email que recebeste e depois entra.'; return; }
+      session = r.data.session; enterApp();
+    };
+    document.getElementById('lin').onclick = () => go(false);
+    document.getElementById('lup').onclick = () => go(true);
+    document.getElementById('lcfg').onclick = () => { localStorage.removeItem(CFG_KEY); boot(); };
+  } else {
+    v.innerHTML = `<div class="gate panel"><h2>Sem ligação</h2><p>${esc(extra)}</p><div class="actions"><button class="btn" onclick="location.reload()">Tentar outra vez</button></div></div>`;
+  }
+}
+function enterApp(){
+  document.body.classList.remove('gated');
+  if (!cacheLoad()) { settings = {...DEFAULTS}; stored = {}; }
+  render(); setSync('A sincronizar…'); pull();
+}
+async function boot(){
+  pending = loadJSON(PEND_KEY, {});
+  const cfg = loadJSON(CFG_KEY, null);
+  if (!cfg || !cfg.url || !cfg.key) return showGate('setup');
+  if (!window.supabase) return showGate('error', 'Não foi possível carregar a sincronização. Verifica a ligação à internet.');
+  try { sb = window.supabase.createClient(cfg.url, cfg.key, {auth:{persistSession:true, autoRefreshToken:true}}); }
+  catch(e) { localStorage.removeItem(CFG_KEY); return showGate('setup'); }
+  const {data} = await sb.auth.getSession(); session = data.session;
+  sb.auth.onAuthStateChange((_e, s) => { session = s; });
+  if (!session) return showGate('login');
+  enterApp();
+}
+window.addEventListener('online', () => { flush(); pull(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && session) pull(); });
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+boot();
+</script>
+</body>
+</html>
