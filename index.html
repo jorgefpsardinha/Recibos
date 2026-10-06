@@ -140,6 +140,8 @@ body.gated nav.tabs,body.gated #sync{display:none}
 .gate .err{color:var(--red);font-size:.9rem;margin-top:10px;min-height:1.2em}
 .linkbtn{background:none;border:0;padding:0;color:var(--green);font:inherit;text-decoration:underline;cursor:pointer}
 .fxrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.steps.obrig>li{grid-template-columns:1fr}
+.steps.obrig>li::before{display:none}
 .empty{padding:22px 16px;text-align:center;color:var(--muted)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -156,7 +158,7 @@ body.gated nav.tabs,body.gated #sync{display:none}
     <button role="tab" data-tab="contas" aria-selected="false">Contas</button>
     <button role="tab" data-tab="calendario" aria-selected="false">Calendário</button>
     <button role="tab" data-tab="definicoes" aria-selected="false">Definições</button>
-    <button role="tab" data-tab="guia" aria-selected="false">Guia</button>
+    <button role="tab" data-tab="ajuda" aria-selected="false">Ajuda</button>
   </nav>
   <main id="view"></main>
 </div>
@@ -181,7 +183,7 @@ const lastDayOfMonth = (y,m) => S(new Date(Date.UTC(y,m,0))); // m 1-12
 
 /* ---------- state ---------- */
 const DEFAULTS = {
-  activityStart:'2026-08-23', cycleStart:'2026-10-04', cycleDays:28, defaultAmount:0, billingMode:'hourly', hourlyRate:0, defaultHours:0, currency:'USD', fxEstimate:1.15,
+  activityStart:'2026-08-23', cycleStart:'2026-10-04', cycleDays:28, defaultAmount:0, billingMode:'hourly', hourlyRate:0, defaultHours:0, currency:'USD', fxEstimate:1.15, ssExempt:true, cpeDone:false, ivaRegime:'normal',
   reservePct:25, regressar:true, regressarYear:2026, dedColeta:250, ivaLimit:15000, ivaMode:'art6',
   myName:'', myNif:'', myAddress:'', myEmail:'', payment:'',
   clientName:'', clientAddress:'',
@@ -190,7 +192,7 @@ const DEFAULTS = {
 };
 let settings = {...DEFAULTS};
 let stored = {};           // period docs: start -> data
-let tab = 'periodos';
+let tab = 'periodos', helpDoc = 'fatura';
 let selYear = null;
 const timers = {};
 const CFG_KEY = 'recibos-config', CACHE_KEY = 'recibos-cache', PEND_KEY = 'recibos-pending';
@@ -321,6 +323,10 @@ function portalText(p){
 }
 const fmtNum = s => D(s).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
 const fmtH = h => (+h).toLocaleString('pt-PT',{maximumFractionDigits:2});
+function reserveLine(p){
+  const y = +(p.issueDate || p.end).slice(0,4), pj = projection(y);
+  return `Pôr de parte para o IRS: ${eur(p.amount * pj.rate)} (${(pj.rate*100).toLocaleString('pt-PT',{maximumFractionDigits:1})}%)`;
+}
 function breakdown(p){
   const parts = [];
   if (p.hourly) parts.push(`${fmtH(p.hours)} h × ${cur(p.rate,p.c)}`);
@@ -348,6 +354,30 @@ function progressive(x){
   }
   return tax;
 }
+function irsTax(year, gross){
+  const sy = +settings.activityStart.slice(0,4);
+  const red = year == sy ? 0.5 : year == sy+1 ? 0.75 : 1;
+  const reg = !!settings.regressar && year >= +settings.regressarYear && year <= +settings.regressarYear + 4;
+  let taxable = gross * 0.75 * red; if (reg) taxable *= 0.5;
+  return Math.max(0, progressive(taxable) - (Number(settings.dedColeta)||0));
+}
+function defaultPeriodEur(){
+  const s = settings, base = s.billingMode === 'hourly' ? (+s.hourlyRate||0) * (+s.defaultHours||0) : (+s.defaultAmount||0);
+  return (s.currency || 'EUR') === 'EUR' ? base : base / (+s.fxEstimate || 1);
+}
+function projection(year){
+  const ps = allPeriods(), Y = String(year);
+  const actual = ps.filter(p => counted(p) && dateOf(p).startsWith(Y)).reduce((a,p) => a+p.amount, 0);
+  // Períodos ainda por terminar (o atual e os seguintes) que acabam dentro do ano, ao valor habitual
+  let future = 0, n = 0;
+  const cur = ps.filter(p => !counted(p));
+  cur.forEach(p => { if (p.end.startsWith(Y)) { future += p.amount || defaultPeriodEur(); n++; } });
+  const last = ps.length ? ps[ps.length-1] : null;
+  let st = last ? addDays(last.end, 1) : settings.cycleStart;
+  while (st.slice(0,4) <= Y && n < 60) { const en = addDays(st, settings.cycleDays-1); if (en.startsWith(Y)) { future += defaultPeriodEur(); n++; } if (en.slice(0,4) > Y) break; st = addDays(en, 1); }
+  const gross = actual + future, tax = irsTax(year, gross);
+  return {actual, future, gross, tax, rate: gross ? tax / gross : 0};
+}
 function irs(year){
   const ps = allPeriods().filter(p => counted(p) && dateOf(p).startsWith(String(year)));
   const gross = ps.reduce((a,p) => a+p.amount, 0);
@@ -360,7 +390,7 @@ function irs(year){
   const received = allPeriods().filter(p => p.paidDate && p.paidDate.startsWith(String(year))).reduce((a,p) => a + (Number(p.paidAmount)||p.amount), 0);
   return {gross, coef, red, reg, taxable, tax, received, count:ps.length};
 }
-function exemptUntil(){ return addDays(addMonths(settings.activityStart, 12), -1); }
+function exemptUntil(){ return settings.ssExempt === false ? addDays(settings.activityStart, -1) : addDays(addMonths(settings.activityStart, 12), -1); }
 function ssQuarters(){
   const out = [], ex = exemptUntil(), ps = allPeriods().filter(counted);
   let y = +settings.activityStart.slice(0,4), q = Math.floor((+settings.activityStart.slice(5,7)-1)/3);
@@ -383,7 +413,7 @@ function render(opts={}){
   document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
   const v = document.getElementById('view');
   if (tab === 'definicoes' && opts.keepForm && v.querySelector('form.settings')) return;
-  v.innerHTML = tab === 'periodos' ? viewPeriods() : tab === 'contas' ? viewContas() : tab === 'calendario' ? viewCal() : tab === 'guia' ? viewGuide() : viewSettings();
+  v.innerHTML = tab === 'periodos' ? viewPeriods() : tab === 'contas' ? viewContas() : tab === 'calendario' ? viewCal() : tab === 'ajuda' ? viewHelp() : viewSettings();
   if (tab === 'definicoes') bindSettings();
 }
 
@@ -403,6 +433,7 @@ function viewPeriods(){
       <div class="range">${fmtD(cur.start)} a ${fmtD(cur.end,true)}</div>
       <div class="amount">${eur(cur.amount)}</div>
       ${breakdown(cur) ? `<div class="sync">${esc(breakdown(cur))}</div>` : ''}
+      <div class="sync">${esc(reserveLine(cur))}</div>
       <div class="days" aria-label="${elapsed} de ${len} dias">${days}</div>
       <div class="foot"><span class="chip t-${st.tone}">${esc(st.label)}</span>
         <button class="btn" data-open="${cur.start}">Abrir período</button></div>
@@ -426,6 +457,7 @@ function viewContas(){
   const ssYear = ssQuarters().filter(q => !q.exempt).reduce((a,q) => { // months paid in selYear
     let sum = 0; for (let k=1;k<=3;k++){ const m = addMonths(q.declDate.slice(0,8)+'01', k); if (m.startsWith(String(selYear))) sum += q.monthly; } return a+sum; }, 0);
   const reserveRule = r.received * (Number(settings.reservePct)||0) / 100;
+  const pj = projection(selYear);
   const ivaPct = Math.min(100, r.gross / (Number(settings.ivaLimit)||15000) * 100);
   const ivaCls = r.gross > settings.ivaLimit * 1.25 ? 'bad' : r.gross > settings.ivaLimit ? 'warn' : '';
   const yearBtns = years.map(y => `<button data-year="${y}" aria-pressed="${y===selYear}">${y}</button>`).join('');
@@ -453,44 +485,179 @@ function viewContas(){
     <h3>Segurança Social</h3>
     <dl class="kv">${ssRows || '<dt>Sem trimestres neste ano</dt><dd></dd>'}
       <dt>A pagar em ${selYear}</dt><dd class="total">${eur(ssYear)}</dd></dl>
-    <p class="note">Isenção do 1.º ano até ${fmtD(ex,true)}. Depois, a contribuição mensal é 21,4% sobre 70% da média mensal do trimestre declarado (mínimo 20 €), paga nos três meses seguintes à declaração.</p>
+    <p class="note">${settings.ssExempt === false ? 'Sem isenção (reinício de atividade).' : 'Isenção do 1.º ano até ' + fmtD(ex,true) + '.'} Depois, a contribuição mensal é 21,4% sobre 70% da média mensal do trimestre declarado (mínimo 20 €), paga nos três meses seguintes à declaração.</p>
   </section>
   <section class="panel">
-    <h3>Pôr de parte</h3>
+    <h3>Reserva para o IRS de ${selYear}</h3>
     <dl class="kv">
-      <dt>Recebido em ${selYear}</dt><dd>${eur(r.received)}</dd>
-      <dt>Regra dos ${settings.reservePct}%</dt><dd>${eur(reserveRule)}</dd>
-      <dt>Estimativa IRS + Segurança Social</dt><dd class="total">${eur(r.tax + ssYear)}</dd>
+      <dt>Faturação prevista no ano</dt><dd>${eur(pj.gross)}</dd>
+      <dt>IRS previsto</dt><dd>${eur(pj.tax)}</dd>
+      <dt>Pôr de parte de cada pagamento</dt><dd>${(pj.rate*100).toLocaleString('pt-PT',{maximumFractionDigits:1})}%</dd>
+      <dt>Recebido até agora</dt><dd>${eur(r.received)}</dd>
+      <dt>Já devias ter guardado</dt><dd class="total">${eur(r.received * pj.rate)}</dd>
     </dl>
-    <p class="note">Se a estimativa ficar acima da regra, guarda o valor mais alto.</p>
+    <p class="note">A previsão junta o que já faturaste com os períodos que faltam até ao fim do ano, às horas e ao valor habituais. A Segurança Social não entra aqui porque se paga todos os meses (${eur(ssYear)} previstos em ${selYear}). Para teres margem, a regra dos ${settings.reservePct}% daria ${eur(reserveRule)}.</p>
   </section>
   <section class="panel">
-    <h3>Limite do IVA (art. 53.º)</h3>
+    <h3>${settings.ivaRegime === 'normal' ? 'Volume de negócios' : 'Limite do IVA (art. 53.º)'}</h3>
     <dl class="kv"><dt>Faturado em ${selYear}</dt><dd>${eur(r.gross)} de ${eur(settings.ivaLimit)}</dd></dl>
     <div class="bar ${ivaCls}"><span style="width:${ivaPct}%"></span></div>
-    <p class="note">${ivaCls === 'bad' ? 'Passaste o limite em mais de 25%: sais da isenção de imediato. Fala com o contabilista.' : ivaCls === 'warn' ? 'Passaste o limite: a isenção termina no ano seguinte. Fala com o contabilista.' : 'Os serviços a esta empresa não levam IVA de qualquer forma; confirma com o contabilista se contam para este limite.'}</p>
+    <p class="note">${settings.ivaRegime === 'normal' ? 'Estás no regime normal de IVA, com declaração trimestral. Este valor serve só de referência.' : ivaCls === 'bad' ? 'Passaste o limite em mais de 25%: sais da isenção de imediato. Fala com o contabilista.' : ivaCls === 'warn' ? 'Passaste o limite: a isenção termina no ano seguinte. Fala com o contabilista.' : 'Os serviços a esta empresa não levam IVA de qualquer forma; confirma com o contabilista se contam para este limite.'}</p>
   </section>`;
 }
 
+function ivaQuarters(){
+  const out = [];
+  let y = +settings.activityStart.slice(0,4), q = Math.floor((+settings.activityStart.slice(5,7)-1)/3);
+  const endY = +today().slice(0,4) + 2;
+  while (y <= endY) {
+    // Prazo: dia 20 (entrega) e 25 (pagamento) do 2.º mês após o trimestre; 2.º trimestre só em setembro.
+    let dy = y, dm = q*3 + 3 + 2;
+    if (q === 1) dm = 9;
+    if (dm > 12) { dm -= 12; dy++; }
+    const mm = String(dm).padStart(2,'0');
+    out.push({y, q:q+1, decl:`${dy}-${mm}-20`, pay:`${dy}-${mm}-25`});
+    q++; if (q > 3) { q = 0; y++; }
+  }
+  return out;
+}
 function viewCal(){
   const t = today(), items = [], horizon = addMonths(t, 15);
   allPeriods().forEach(p => { const s = status(p); if (s.deadline) items.push({d:s.deadline, t:`Emitir a fatura do período ${p.n}`, s:`${fmtD(p.start)} a ${fmtD(p.end)}, ${eur(p.amount)}`, tone:s.tone}); });
+  if (!settings.cpeDone) { const d = addDays(settings.activityStart, 30); items.push({d, t:'Aderir à caixa postal eletrónica', s:'Portal das Finanças: Dados Pessoais, Caixa Postal Eletrónica. Marca como feito em Definições.', tone: d < t ? 'bad' : 'warn'}); }
   const ex = exemptUntil();
-  if (ex >= t) items.push({d:addDays(ex,1), t:'Fim da isenção da Segurança Social', s:'A partir daqui passas a declarar e a pagar contribuições.'});
-  ssQuarters().filter(q => !q.exempt && q.declDate >= t && q.declDate <= horizon).forEach(q => items.push({d:q.declDate, t:`Declaração trimestral à Segurança Social`, s:`Rendimentos do ${q.q}.º trimestre de ${q.y}: ${eur(q.gross)}`}));
+  if (settings.ssExempt !== false && ex >= t) items.push({d:addDays(ex,1), t:'Fim da isenção da Segurança Social', s:'A partir daqui passas a declarar e a pagar contribuições.'});
+  ssQuarters().filter(q => !q.exempt).forEach(q => {
+    if (q.declDate >= t && q.declDate <= horizon) items.push({d:q.declDate, t:'Declaração trimestral à Segurança Social', s:`Segurança Social Direta. Rendimentos do ${q.q}.º trimestre de ${q.y}: ${eur(q.gross)}`});
+    for (let k = 1; k <= 3; k++) { const m = addMonths(q.declDate.slice(0,8)+'01', k).slice(0,8) + '20'; if (m >= t && m <= horizon) items.push({d:m, t:'Pagar a Segurança Social', s:`Entre os dias 10 e 20. Estimativa: ${eur(q.monthly)}`}); }
+  });
+  ivaQuarters().forEach(v => {
+    const cls = addDays(v.decl, -10);
+    if (cls >= t && cls <= horizon) items.push({d:cls, t:`Classificar faturas de compras (IVA ${v.q}.º trimestre ${v.y})`, s:'No e-Fatura, marca as compras da atividade, para entrarem na declaração de IVA. Recomendado, não é prazo legal.'});
+    if (v.decl >= t && v.decl <= horizon) items.push({d:v.decl, t:`Declaração periódica de IVA, ${v.q}.º trimestre ${v.y}`, s:`Entregar, ou confirmar a declaração automática, mesmo sem operações. Se houver imposto a pagar, pagar até ${fmtD(v.pay)}.`});
+  });
   const sy = +settings.activityStart.slice(0,4);
   for (let y = sy; y <= +t.slice(0,4); y++) {
     const r = irs(y), ds = `${y+1}-06-30`;
-    if (ds >= t) items.push({d:ds, t:`Entregar o IRS de ${y}`, s:`Prazo de 1 de abril a 30 de junho. Estimativa: ${eur(r.tax)}`});
+    if (ds >= t) items.push({d:ds, t:`Entregar o IRS de ${y}`, s:`Modelo 3 com anexo B e anexo SS (e J, se aplicável). Prazo de 1 de abril a 30 de junho. Estimativa: ${eur(r.tax)}`});
     const pc = r.tax * 0.765 / 3;
-    if (pc > 0) [[7,20],[9,20],[12,20]].forEach(([m,d]) => { const dd = `${y+2}-${String(m).padStart(2,'0')}-${d}`; if (dd >= t && dd <= horizon) items.push({d:dd, t:'Pagamento por conta de IRS', s:`Estimativa com base no IRS de ${y}: ${eur(pc)}`}); });
+    if (pc > 0) [[7,20],[9,20],[12,20]].forEach(([m,d]) => { const dd = `${y+2}-${String(m).padStart(2,'0')}-${d}`; if (dd >= t && dd <= horizon) items.push({d:dd, t:'Pagamento por conta de IRS', s:`Calculado com base no IRS de ${y}. Estimativa: ${eur(pc)}`}); });
   }
   items.sort((a,b) => a.d < b.d ? -1 : 1);
   if (!items.length) return `<div class="panel empty">Sem obrigações nos próximos meses.</div>`;
   return `<div class="panel"><ul class="cal">${items.map(i => `
     <li><div class="d">${D(i.d).getUTCDate()}<small>${D(i.d).toLocaleDateString('pt-PT',{month:'short',year:'numeric',timeZone:'UTC'})}</small></div>
     <div><h3>${esc(i.t)}</h3><div class="sync">${esc(i.s)}</div>${i.tone ? `<span class="chip t-${i.tone}" style="margin-top:6px">${i.tone==='bad'?'Atrasado':'Pendente'}</span>` : ''}</div></li>`).join('')}</ul>
-    <p class="note">Datas indicativas. Os pagamentos por conta só existem se a AT os calcular na tua nota de liquidação.</p></div>`;
+    <p class="note">Prazos segundo o Portal das Finanças e a Segurança Social; confirma sempre no calendário fiscal. Os pagamentos por conta só existem se a AT os calcular, e baseiam-se no IRS de dois anos antes.</p></div>`;
+}
+
+function viewObrig(){
+  const row = (t, d, tag) => `<li><div><h3>${t}${tag ? ` <span class="chip ${tag[0]}">${tag[1]}</span>` : ''}</h3><p>${d}</p></div></li>`;
+  const sim = ['t-ok','Aplica-se'], nao = ['t-neutral','Não se aplica'], talvez = ['t-warn','Só se acontecer'];
+  return `<div class="guide">
+  <p class="when" style="margin-top:8px">As obrigações indicadas pelo Portal das Finanças ao abrir a atividade, em linguagem simples. Não substitui o contabilista.</p>
+
+  <h2>Uma vez</h2>
+  <ul class="steps obrig">
+    ${row('Aderir à caixa postal eletrónica', 'Até 30 dias depois do início de atividade. É por aí que a AT te envia notificações oficiais. No Portal das Finanças: Dados Pessoais, Caixa Postal Eletrónica. ' + (settings.cpeDone ? '<strong>Marcado como feito.</strong>' : '<strong>Ainda não marcado como feito em Definições.</strong>'), settings.cpeDone ? ['t-ok','Feito'] : ['t-bad','Por fazer'])}
+  </ul>
+
+  <h2>Em cada período</h2>
+  <ul class="steps obrig">
+    ${row('Emitir fatura ou fatura-recibo', 'Por cada serviço, até 5 dias úteis depois do fim do período. As faturas emitidas no Portal das Finanças ficam comunicadas automaticamente, por isso não tens de as comunicar à parte (essa obrigação, até dia 5 do mês seguinte, é só para quem usa outro programa).', sim)}
+    ${row('Liquidar IVA nas operações sujeitas', 'Cobrar IVA quando o serviço é tributado em Portugal. Os teus serviços à empresa americana não são: a fatura leva a menção "não sujeito, art. 6.º, n.º 6, al. a) do CIVA" e IVA zero.', sim)}
+    ${row('Classificar faturas no e-Fatura', 'Marcar no e-Fatura as compras feitas para a atividade (com o teu NIF), para o IVA dessas compras poder ser deduzido. Faz isto antes de cada declaração de IVA.', sim)}
+  </ul>
+
+  <h2>De 3 em 3 meses</h2>
+  <ul class="steps obrig">
+    ${row('Declaração periódica de IVA', 'Até dia 20 do 2.º mês depois do trimestre: Jul–Set até 20 de novembro, Out–Dez até 20 de fevereiro, Jan–Mar até 20 de maio. Exceção: Abr–Jun até 20 de setembro. Entrega-se sempre, mesmo sem operações. Se estiveres na declaração automática, tens de a confirmar no mesmo prazo.', sim)}
+    ${row('Pagar o IVA, se houver', 'Até dia 25 do mesmo mês da declaração (Abr–Jun até 25 de setembro). Por débito direto, MB Way, Multibanco ou homebanking. No teu caso o resultado deve ser quase sempre zero ou crédito.', sim)}
+    ${row('Declaração trimestral à Segurança Social', 'Na Segurança Social Direta, até ao fim de janeiro, abril, julho e outubro, com os rendimentos do trimestre anterior.', sim)}
+  </ul>
+
+  <h2>Todos os meses</h2>
+  <ul class="steps obrig">
+    ${row('Pagar a Segurança Social', 'Entre os dias 10 e 20 de cada mês, com base na última declaração trimestral. Mínimo de 20 € por mês. Recomendado: débito direto.', sim)}
+  </ul>
+
+  <h2>Uma vez por ano</h2>
+  <ul class="steps obrig">
+    ${row('Declaração de IRS (Modelo 3)', 'Entre 1 de abril e 30 de junho do ano seguinte. Com o anexo B (rendimentos dos recibos verdes) e o anexo SS (informação para a Segurança Social). O anexo J é para rendimentos obtidos fora de Portugal: confirma com o contabilista se se aplica a um cliente estrangeiro com o trabalho feito em Portugal. É aqui que pedes o regime Regressar.', sim)}
+    ${row('Pagamentos por conta de IRS', 'Até 20 de julho, 20 de setembro e 20 de dezembro, se a AT os calcular. Baseiam-se no IRS de dois anos antes, por isso os primeiros devem surgir em 2028.', talvez)}
+  </ul>
+
+  <h2>Quando alguma coisa mudar</h2>
+  <ul class="steps obrig">
+    ${row('Declaração de alterações', 'Até 15 dias depois de mudar algum dado da atividade: código de atividade, morada, regime de IVA, IBAN, etc.', talvez)}
+    ${row('Declaração de cessação', 'Até 30 dias depois de deixares de trabalhar como independente.', talvez)}
+    ${row('Modelo 30', 'Até ao fim do 2.º mês seguinte ao pagamento, se pagares serviços a pessoas ou empresas não residentes em Portugal no âmbito da atividade. Pode incluir algumas subscrições ou prestadores estrangeiros: confirma com o contabilista se começares a ter esses pagamentos.', talvez)}
+  </ul>
+
+  <h2>Não se aplicam a ti, para já</h2>
+  <ul class="steps obrig">
+    ${row('DMR (Declaração Mensal de Remunerações)', 'Só para quem paga salários a trabalhadores.', nao)}
+    ${row('Declaração de alterações por volume acima de 650.000 €', 'Só se faturares mais do que isso num ano.', nao)}
+    ${row('Comunicar faturas até dia 5', 'Só para quem fatura fora do Portal das Finanças. Se um dia passares para o InvoiceXpress, o programa trata disto.', nao)}
+  </ul>
+  </div>`;
+}
+
+function viewHelp(){
+  const docs = [['fatura','Emitir uma fatura'],['guia','Passo a passo'],['obrig','Obrigações']];
+  const nav = `<div class="yearsel" role="tablist">${docs.map(([k,l]) => `<button data-doc="${k}" aria-pressed="${helpDoc===k}">${l}</button>`).join('')}</div>`;
+  return nav + (helpDoc === 'guia' ? viewGuide() : helpDoc === 'obrig' ? viewObrig() : viewFatura());
+}
+function viewFatura(){
+  return `<div class="guide">
+  <h2>Quando</h2>
+  <ol class="steps">
+    <li><div><h3>Até 5 dias úteis depois do fim do período</h3>
+      <p>Fatura-se quando o serviço termina, não quando o dinheiro chega. A app mostra o prazo de cada período.</p></div></li>
+    <li><div><h3>Fatura agora, recibo depois</h3>
+      <p>Se ainda não te pagaram, emite uma <strong>Fatura</strong>. Quando o dinheiro chegar, emites o <strong>Recibo</strong>. Só usas <strong>Fatura-Recibo</strong> se já te tiverem pago.</p></div></li>
+  </ol>
+
+  <h2>Antes de começar, na app</h2>
+  <ol class="steps">
+    <li><div><h3>Abre o período</h3><p>Confirma as horas reais e os extras.</p></div></li>
+    <li><div><h3>Data e taxa</h3><p>Preenche a data de emissão (hoje) e toca em <kbd>Buscar taxa do BCE</kbd>.</p></div></li>
+    <li><div><h3>Copia os dados</h3><p>Copia a <kbd>Descrição para a fatura do Portal</kbd> e toma nota do total em euros.</p></div></li>
+  </ol>
+
+  <h2>No Portal das Finanças</h2>
+  <p class="when">Faturas e Recibos Verdes, Emitir, Fatura. Os nomes dos campos podem variar ligeiramente.</p>
+  <ol class="steps">
+    <li><div><h3>Cliente</h3><p>A empresa, com país Estados Unidos, nome e morada. Se pedir um número fiscal estrangeiro, usa o EIN da empresa, se o tiveres.</p></div></li>
+    <li><div><h3>Descrição</h3><p>Cola o texto copiado da app.</p></div></li>
+    <li><div><h3>Valor</h3><p>O total em euros que a app mostra.</p></div></li>
+    <li><div><h3>IVA</h3><p>Opção de não sujeito, motivo <strong>art. 6.º, n.º 6, al. a) do CIVA</strong>.</p></div></li>
+    <li><div><h3>Retenção na fonte</h3><p>Sem retenção: cliente não residente, sem estabelecimento em Portugal.</p></div></li>
+    <li><div><h3>Emitir</h3><p>Revê o resumo, emite e descarrega o PDF.</p></div></li>
+  </ol>
+
+  <h2>Depois de emitir</h2>
+  <ol class="steps">
+    <li><div><h3>Regista na app</h3><p>Número da fatura e data de emissão, no período.</p></div></li>
+    <li><div><h3>Envia à empresa</h3><p>Gera a <kbd>Invoice em inglês</kbd>, guarda em PDF e envia por email junto com o PDF do Portal.</p></div></li>
+    <li><div><h3>Põe de parte</h3><p>O período mostra quanto guardar para o IRS.</p></div></li>
+  </ol>
+
+  <h2>Quando o pagamento chega</h2>
+  <ol class="steps">
+    <li><div><h3>Emite o Recibo</h3><p>No Portal, ligado a esta Fatura, com o mesmo valor em euros da fatura. Se pagarem em prestações, um recibo por prestação.</p></div></li>
+    <li><div><h3>Regista o pagamento</h3><p>Na app: data e valor que entrou no banco em euros. A diferença para a fatura (câmbio, comissões) é normal.</p></div></li>
+  </ol>
+
+  <h2>Onde a fatura é declarada</h2>
+  <p class="when">Conta a data de emissão da fatura, não a do pagamento nem a do período.</p>
+  <ol class="steps">
+    <li><div><h3>IVA</h3><p>Na declaração do trimestre em que a fatura foi emitida. Exemplo: emitida em outubro, entra no 4.º trimestre, entregue até 20 de fevereiro.</p></div></li>
+    <li><div><h3>Segurança Social</h3><p>Na declaração trimestral seguinte. Exemplo: emitida em outubro, entra na declaração de janeiro.</p></div></li>
+    <li><div><h3>IRS</h3><p>No IRS do ano da emissão, entregue entre abril e junho do ano seguinte.</p></div></li>
+  </ol>
+  <p class="note">Mesmo num trimestre sem faturas, as declarações de IVA e da Segurança Social entregam-se na mesma, a zero.</p>
+  </div>`;
 }
 
 function viewGuide(){
@@ -556,11 +723,11 @@ function viewGuide(){
   <p class="when">A aba <kbd>Calendário</kbd> mostra as datas certas.</p>
   <ol class="steps">
     <li><div><h3>Segurança Social</h3>
-      <p>Estás isento até ${ex}. A partir daí, entregas a declaração trimestral na Segurança Social Direta, em janeiro, abril, julho e outubro, e pagas todos os meses.</p></div></li>
+      <p>${settings.ssExempt === false ? 'Não tens isenção, porque é um reinício de atividade. Entregas' : 'Estás isento até ' + ex + '. A partir daí, entregas'} a declaração trimestral na Segurança Social Direta, em janeiro, abril, julho e outubro, e pagas todos os meses.</p></div></li>
     <li><div><h3>IRS</h3>
       <p>Entre 1 de abril e 30 de junho do ano seguinte. As faturas emitidas no Portal já aparecem lá. Leva ao contabilista o valor estimado em <kbd>Contas</kbd> para comparar.</p></div></li>
     <li><div><h3>Pagamentos por conta</h3>
-      <p>A partir do 2.º ano, se a AT os calcular, pagas em julho, setembro e dezembro.</p></div></li>
+      <p>Se a AT os calcular, pagas em julho, setembro e dezembro. Baseiam-se no IRS de dois anos antes, por isso os primeiros devem surgir em 2028.</p></div></li>
     <li><div><h3>Cópia de segurança</h3>
       <p>No fim de cada trimestre, em Definições, toca em <kbd>Exportar CSV</kbd> e envia ao contabilista.</p></div></li>
   </ol>
@@ -604,6 +771,8 @@ function viewSettings(){
   </fieldset>
   <fieldset><legend>Impostos</legend>
     <div class="grid2">${f('reservePct','Pôr de parte (%)','number','min="0" max="60"')}${f('dedColeta','Deduções à coleta (€)','number','step="1" min="0"')}</div>
+    <label class="check"><input type="checkbox" name="cpeDone" ${s.cpeDone?'checked':''}> Já aderi à caixa postal eletrónica</label>
+    <label class="check"><input type="checkbox" name="ssExempt" ${s.ssExempt!==false?'checked':''}> Isenção de Segurança Social no 1.º ano</label>
     <label class="check"><input type="checkbox" name="regressar" ${s.regressar?'checked':''}> Aplicar regime Regressar (50% do rendimento isento)</label>
     ${f('regressarYear','1.º ano de residência para o Regressar','number','min="2019" max="2030"')}
     <label>Menção de IVA nas faturas
@@ -611,7 +780,12 @@ function viewSettings(){
         <option value="art6" ${s.ivaMode==='art6'?'selected':''}>Não sujeito, art. 6.º, n.º 6, al. a) do CIVA</option>
         <option value="art53" ${s.ivaMode==='art53'?'selected':''}>Isento, art. 53.º do CIVA</option>
       </select></label>
-    ${f('ivaLimit','Limite anual do art. 53.º (€)','number','step="1"')}
+    <label>Regime de IVA
+      <select name="ivaRegime">
+        <option value="normal" ${s.ivaRegime!=='53'?'selected':''}>Normal, trimestral</option>
+        <option value="53" ${s.ivaRegime==='53'?'selected':''}>Isenção do art. 53.º</option>
+      </select></label>
+    ${s.ivaRegime==='53' ? f('ivaLimit','Limite anual do art. 53.º (€)','number','step="1"') : ''}
     <label>Escalões de IRS (limite;taxa, um por linha)<textarea name="brackets">${esc(br)}</textarea></label>
     <p class="note">Valores de referência; confirma a tabela do ano com o contabilista.</p>
   </fieldset>
@@ -646,7 +820,7 @@ function bindSettings(){
     else if (el.type === 'date' && !v) return;
     if (k === 'cycleDays' && (v < 7 || v > 62)) return;
     saveSettings({[k]: v});
-    if (k === 'billingMode' || k === 'currency') { tab = 'definicoes'; document.getElementById('view').innerHTML = viewSettings(); bindSettings(); }
+    if (k === 'billingMode' || k === 'currency' || k === 'ivaRegime') { tab = 'definicoes'; document.getElementById('view').innerHTML = viewSettings(); bindSettings(); }
   });
   document.getElementById('expCsv').onclick = () => exportFile('csv');
   document.getElementById('expJson').onclick = () => exportFile('json');
@@ -685,6 +859,7 @@ function openPeriod(start){
         <label>Data da taxa<input name="fxDate" type="date" value="${esc(own.fxDate||'')}"></label></div>
         <div class="fxrow"><button class="btn" type="button" id="getfx">Buscar taxa do BCE</button><span class="sync" id="fxmsg">Usa a data de emissão, ou hoje se estiver vazia.</span></div>` : ''}
       <div class="totline"><span>Total do período</span><strong id="ptotal">${p.foreign ? cur(p.totalCur,p.c)+' = ' : ''}${eur(p.amount)}</strong></div>
+      <div class="sync" id="preserve" style="text-align:right">${reserveLine(p)}</div>
       <label>Descrição para a fatura do Portal<textarea id="ptext" readonly rows="3">${esc(portalText(p))}</textarea></label>
       <div class="grid2">
         <label>Data de emissão<input name="issueDate" type="date" value="${esc(own.issueDate||'')}"></label>
@@ -717,7 +892,8 @@ function openPeriod(start){
   };
   const refresh = () => { const o = read(), q = {...p, ...o, ...calc(o)};
     document.getElementById('ptotal').textContent = (q.foreign ? cur(q.totalCur,q.c)+' = ' : '') + eur(q.amount);
-    document.getElementById('ptext').value = portalText(q); };
+    document.getElementById('ptext').value = portalText(q);
+    document.getElementById('preserve').textContent = reserveLine(q); };
   document.getElementById('ptext').addEventListener('focus', e => e.target.select());
   form.addEventListener('input', refresh);
   const fxb = document.getElementById('getfx');
@@ -814,6 +990,7 @@ function importFile(file){
 
 /* ---------- events ---------- */
 document.addEventListener('click', e => {
+  const h = e.target.closest('[data-doc]'); if (h) { helpDoc = h.dataset.doc; render(); window.scrollTo(0,0); return; }
   const t = e.target.closest('[data-tab],[data-open],[data-close],[data-year],[data-back]'); if (!t) return;
   if (t.dataset.tab) { tab = t.dataset.tab; render(); }
   else if (t.dataset.open) openPeriod(t.dataset.open);
