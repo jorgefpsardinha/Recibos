@@ -291,6 +291,8 @@ function allPeriods(){
   const s = settings, out = {}, t = today();
   let st = s.cycleStart, i = 0;
   while (st <= t && i < 300) { out[st] = {start:st, end:addDays(st, s.cycleDays-1)}; st = addDays(st, s.cycleDays); i++; }
+  // Período inicial irregular: do início de atividade até ao dia antes dos ciclos regulares
+  if (s.activityStart && s.activityStart < s.cycleStart && s.activityStart <= t) out[s.activityStart] = {start:s.activityStart, end:addDays(s.cycleStart, -1)};
   for (const [k,d] of Object.entries(stored)) out[k] = {...(out[k]||{start:k, end:addDays(k, s.cycleDays-1)}), ...d, start:k};
   const arr = Object.values(out).sort((a,b) => a.start < b.start ? -1 : 1);
   arr.forEach((p,idx) => { p.n = idx+1; Object.assign(p, calc(p)); });
@@ -747,8 +749,9 @@ function viewSettings(){
   const br = s.brackets.map(([l,r]) => `${l==null?'acima':l};${r}`).join('\n');
   return `<form class="settings" autocomplete="off" onsubmit="return false">
   <fieldset><legend>Atividade e períodos</legend>
-    <div class="grid2">${f('activityStart','Início de atividade','date')}${f('cycleStart','Início do 1.º período','date')}</div>
+    <div class="grid2">${f('activityStart','Início de atividade','date')}${f('cycleStart','Início dos ciclos regulares','date')}</div>
     ${f('cycleDays','Dias por período','number','min="7" max="62"')}
+    <p class="note">Se o primeiro período tiver outra duração, põe aqui o início dos ciclos regulares: a app cria sozinha um período desde o início de atividade até ao dia anterior. Também podes mudar o fim de qualquer período dentro dele.</p>
   </fieldset>
   <fieldset><legend>Como cobras</legend>
     <div class="grid2"><label>Moeda acordada
@@ -850,6 +853,7 @@ function openPeriod(start){
   dlgBody.innerHTML = `
     <header><div><h3>Período ${p.n}</h3><div class="sync">${fmtD(p.start)} a ${fmtD(p.end,true)}</div></div><button class="x" aria-label="Fechar" data-close>×</button></header>
     <form id="pform" onsubmit="return false">
+      <label>Fim do período<input name="end" type="date" value="${esc(p.end)}" min="${p.start}"></label>
       ${billing}
       <label style="margin-top:14px">Extras</label>
       <div id="extras">${p.extras.map(extraRow).join('')}</div>
@@ -880,7 +884,7 @@ function openPeriod(start){
   const form = document.getElementById('pform'), box = document.getElementById('extras');
   const read = () => {
     const o = {...own}; delete o.amount;
-    ['hours','rate','base','fx','fxDate','issueDate','invoiceNo','paidDate','paidAmount','notes'].forEach(k => {
+    ['end','hours','rate','base','fx','fxDate','issueDate','invoiceNo','paidDate','paidAmount','notes'].forEach(k => {
       const el = form.elements[k]; if (!el) return;
       if (el.value === '') delete o[k]; else o[k] = ['hours','rate','base','fx','paidAmount'].includes(k) ? +el.value : el.value;
     });
