@@ -186,7 +186,7 @@ const DEFAULTS = {
   activityStart:'2026-08-23', cycleStart:'2026-10-04', cycleDays:28, defaultAmount:0, billingMode:'hourly', hourlyRate:0, defaultHours:0, currency:'USD', fxEstimate:1.15, ssExempt:true, cpeDone:false, ivaRegime:'normal',
   reservePct:25, regressar:true, regressarYear:2026, dedColeta:250, ivaLimit:15000, ivaMode:'art6',
   myName:'', myNif:'', myAddress:'', myEmail:'', payment:'',
-  clientName:'', clientAddress:'',
+  clientName:'', clientAddress:'', clients:[], defaultClientId:'',
   serviceDesc:'Consulting services: production management, process efficiency and AI integration',
   brackets:[[8059,12.5],[12160,16],[17233,21.5],[22306,24.4],[28400,31.4],[41629,34.9],[44987,43.1],[83696,44.6],[null,48]]
 };
@@ -743,6 +743,77 @@ function viewGuide(){
   </div>`;
 }
 
+/* ---------- clientes ---------- */
+function getClients(){
+  const s = settings, c = Array.isArray(s.clients) ? s.clients : [];
+  if (!c.length && (s.clientName || s.clientAddress)) return [{id:'c-main', name:s.clientName || 'Cliente', country:'Estados Unidos', taxId:'', address:s.clientAddress || '', email:'', notes:''}];
+  return c;
+}
+const EMPTY_CLIENT = {id:'', name:'', country:'', taxId:'', address:'', email:'', notes:''};
+function clientOf(p){
+  const cs = getClients();
+  return cs.find(c => c.id === (p && p.clientId)) || cs.find(c => c.id === settings.defaultClientId) || cs[0] || EMPTY_CLIENT;
+}
+function clientBox(c){
+  if (!c.id) return `<p class="note">Ainda não tens clientes. Adiciona-os em Definições, Clientes.</p>`;
+  const fld = (l, v, rows) => rows ? `<label>${l}<textarea readonly rows="${rows}">${esc(v)}</textarea></label>` : `<label>${l}<input readonly value="${esc(v)}"></label>`;
+  return `<div class="grid2">${fld('Nome', c.name)}${fld('País', c.country)}</div>
+    <div class="grid2">${fld('NIF ou equivalente', c.taxId || 'não indicado')}${fld('Email', c.email)}</div>
+    ${fld('Morada', c.address, 2)}`;
+}
+function clientsFieldset(){
+  const cs = getClients(), def = settings.defaultClientId || (cs[0] && cs[0].id);
+  const rows = cs.map(c => `<button type="button" class="row" data-client="${esc(c.id)}">
+      <span class="n">${c.id === def ? '★' : ''}</span>
+      <span><span class="r1">${esc(c.name)}</span><br><span class="sync">${esc([c.country, c.taxId].filter(Boolean).join(', ') || 'Sem país nem número fiscal')}</span></span>
+      <span class="v sync">Editar</span></button>`).join('');
+  return `<fieldset><legend>Clientes</legend>
+    <p class="note" style="margin-top:0">Os dados ficam disponíveis em cada período, para copiares para a fatura do Portal, e entram na invoice em inglês. ★ é o cliente predefinido.</p>
+    ${cs.length ? `<div class="list" style="margin-top:10px">${rows}</div>` : ''}
+    <div class="actions"><button class="btn" type="button" data-client="new">Adicionar cliente</button></div>
+  </fieldset>`;
+}
+function renderSettingsForce(){ if (tab !== 'definicoes') return; document.getElementById('view').innerHTML = viewSettings(); bindSettings(); }
+function openClient(id){
+  const cs = getClients();
+  const isNew = id === 'new';
+  const c = isNew ? {...EMPTY_CLIENT, id:'c' + Date.now().toString(36), country:'Estados Unidos'} : {...EMPTY_CLIENT, ...cs.find(x => x.id === id)};
+  const isDef = !cs.length || (settings.defaultClientId || cs[0].id) === c.id;
+  dlgBody.innerHTML = `<header><div><h3>${isNew ? 'Novo cliente' : 'Editar cliente'}</h3></div><button class="x" aria-label="Fechar" data-close>×</button></header>
+    <form id="cform" onsubmit="return false">
+      <label>Nome<input name="cname" value="${esc(c.name)}" placeholder="Empresa ou pessoa"></label>
+      <div class="grid2">
+        <label>País<input name="country" value="${esc(c.country)}"></label>
+        <label>NIF ou equivalente<input name="taxId" value="${esc(c.taxId)}" placeholder="EIN nos EUA: 12-3456789"></label>
+      </div>
+      <label>Morada<textarea name="address" rows="3">${esc(c.address)}</textarea></label>
+      <label>Email<input name="email" type="email" value="${esc(c.email)}"></label>
+      <label>Notas<textarea name="notes" rows="2">${esc(c.notes || '')}</textarea></label>
+      <label class="check"><input type="checkbox" name="isDefault" ${isDef ? 'checked' : ''}> Cliente predefinido nos períodos novos</label>
+      <div class="err" id="cerr" style="color:var(--red);font-size:.9rem;margin-top:8px"></div>
+      <div class="actions"><button class="btn primary" type="button" id="csave">Guardar</button>${isNew ? '' : '<button class="btn danger" type="button" id="cdel">Apagar</button>'}</div>
+    </form>`;
+  if (!dlg.open) dlg.showModal();
+  const f = document.getElementById('cform').elements;
+  document.getElementById('csave').onclick = () => {
+    const n = {...c, name:f.cname.value.trim(), country:f.country.value.trim(), taxId:f.taxId.value.trim(), address:f.address.value.trim(), email:f.email.value.trim(), notes:f.notes.value.trim()};
+    if (!n.name) { document.getElementById('cerr').textContent = 'Indica o nome do cliente.'; f.cname.focus(); return; }
+    const list = cs.some(x => x.id === n.id) ? cs.map(x => x.id === n.id ? n : x) : cs.concat([n]);
+    const patch = {clients:list};
+    if (f.isDefault.checked) patch.defaultClientId = n.id;
+    else if (!settings.defaultClientId) patch.defaultClientId = list[0].id;
+    saveSettings(patch); dlg.close(); renderSettingsForce();
+  };
+  const del = document.getElementById('cdel');
+  if (del) del.onclick = () => {
+    const used = Object.values(stored).some(p => p.clientId === c.id);
+    if (!confirm(used ? 'Este cliente está associado a períodos. Apagar mesmo assim? Esses períodos passam a usar o cliente predefinido.' : 'Apagar este cliente?')) return;
+    const list = cs.filter(x => x.id !== c.id), patch = {clients:list};
+    if ((settings.defaultClientId || (cs[0] && cs[0].id)) === c.id) patch.defaultClientId = list[0] ? list[0].id : '';
+    saveSettings(patch); dlg.close(); renderSettingsForce();
+  };
+}
+
 function viewSettings(){
   const s = settings;
   const f = (k,l,type='text',extra='') => `<label>${l}<input name="${k}" type="${type}" value="${esc(s[k])}" ${extra}></label>`;
@@ -792,9 +863,9 @@ function viewSettings(){
     <label>Escalões de IRS (limite;taxa, um por linha)<textarea name="brackets">${esc(br)}</textarea></label>
     <p class="note">Valores de referência; confirma a tabela do ano com o contabilista.</p>
   </fieldset>
-  <fieldset><legend>Para a invoice em inglês</legend>
+  ${clientsFieldset()}
+  <fieldset><legend>Os teus dados (para a invoice)</legend>
     ${f('myName','O teu nome')}${f('myNif','NIF')}${f('myAddress','Morada')}${f('myEmail','Email','email')}
-    ${f('clientName','Empresa cliente')}<label>Morada do cliente<textarea name="clientAddress">${esc(s.clientAddress)}</textarea></label>
     ${f('serviceDesc','Descrição do serviço')}
     <label>Dados de pagamento (opcional)<textarea name="payment" placeholder="Ex.: transferência para o banco X; pede o IBAN por email">${esc(s.payment)}</textarea></label>
   </fieldset>
@@ -812,6 +883,7 @@ function viewSettings(){
 
 function bindSettings(){
   const form = document.querySelector('form.settings');
+  form.addEventListener('click', e => { const b = e.target.closest('[data-client]'); if (b) openClient(b.dataset.client); });
   form.addEventListener('input', e => {
     const el = e.target, k = el.name; if (!k) return;
     let v = el.type === 'checkbox' ? el.checked : el.value;
@@ -853,6 +925,7 @@ function openPeriod(start){
   dlgBody.innerHTML = `
     <header><div><h3>Período ${p.n}</h3><div class="sync">${fmtD(p.start)} a ${fmtD(p.end,true)}</div></div><button class="x" aria-label="Fechar" data-close>×</button></header>
     <form id="pform" onsubmit="return false">
+      ${getClients().length ? `<label>Cliente<select name="clientId">${getClients().map(c => `<option value="${esc(c.id)}" ${c.id === clientOf(own).id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>` : ''}
       <label>Fim do período<input name="end" type="date" value="${esc(p.end)}" min="${p.start}"></label>
       ${billing}
       <label style="margin-top:14px">Extras</label>
@@ -865,6 +938,8 @@ function openPeriod(start){
       <div class="totline"><span>Total do período</span><strong id="ptotal">${p.foreign ? cur(p.totalCur,p.c)+' = ' : ''}${eur(p.amount)}</strong></div>
       <div class="sync" id="preserve" style="text-align:right">${reserveLine(p)}</div>
       <label>Descrição para a fatura do Portal<textarea id="ptext" readonly rows="3">${esc(portalText(p))}</textarea></label>
+      <h3 style="margin-top:16px">Dados do cliente para o Portal</h3>
+      <div id="pclient">${clientBox(clientOf(own))}</div>
       <div class="grid2">
         <label>Data de emissão<input name="issueDate" type="date" value="${esc(own.issueDate||'')}"></label>
         <label>N.º da fatura no Portal<input name="invoiceNo" value="${esc(own.invoiceNo||'')}" placeholder="FR ATSIRE01FR/1"></label>
@@ -884,7 +959,7 @@ function openPeriod(start){
   const form = document.getElementById('pform'), box = document.getElementById('extras');
   const read = () => {
     const o = {...own}; delete o.amount;
-    ['end','hours','rate','base','fx','fxDate','issueDate','invoiceNo','paidDate','paidAmount','notes'].forEach(k => {
+    ['clientId','end','hours','rate','base','fx','fxDate','issueDate','invoiceNo','paidDate','paidAmount','notes'].forEach(k => {
       const el = form.elements[k]; if (!el) return;
       if (el.value === '') delete o[k]; else o[k] = ['hours','rate','base','fx','paidAmount'].includes(k) ? +el.value : el.value;
     });
@@ -898,7 +973,8 @@ function openPeriod(start){
     document.getElementById('ptotal').textContent = (q.foreign ? cur(q.totalCur,q.c)+' = ' : '') + eur(q.amount);
     document.getElementById('ptext').value = portalText(q);
     document.getElementById('preserve').textContent = reserveLine(q); };
-  document.getElementById('ptext').addEventListener('focus', e => e.target.select());
+  dlgBody.addEventListener('focusin', e => { if (e.target.matches('input[readonly], textarea[readonly]')) e.target.select(); });
+  if (form.elements.clientId) form.elements.clientId.addEventListener('change', () => { document.getElementById('pclient').innerHTML = clientBox(clientOf({clientId:form.elements.clientId.value})); });
   form.addEventListener('input', refresh);
   const fxb = document.getElementById('getfx');
   if (fxb) fxb.onclick = async () => {
@@ -920,6 +996,7 @@ function invoiceHTML(p){
   const s = settings;
   const vat = s.ivaMode === 'art53' ? 'VAT exempt under Article 53 of the Portuguese VAT Code (CIVA).' : 'VAT not applicable: services supplied to a business established outside the EU (Article 6(6)(a) of the Portuguese VAT Code).';
   const ref = p.invoiceNo || ('Draft ' + p.start);
+  const cl = clientOf(p);
   const issue = p.issueDate || today();
   const fd = x => D(x).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
   const money = n => new Intl.NumberFormat('en-US',{style:'currency',currency:p.c||'EUR'}).format(n||0);
@@ -932,7 +1009,7 @@ h1{font-size:28px;margin:0 0 4px;letter-spacing:-.02em}.muted{color:#5A6A61}.top
 table{width:100%;border-collapse:collapse;margin-top:8px}th,td{text-align:left;padding:10px 0;border-bottom:1px solid #D7E1DA}th{font-size:12px;color:#5A6A61;font-weight:600}td.r,th.r{text-align:right}
 .total td{font-weight:700;font-size:17px;border-bottom:0}.foot{margin-top:28px;font-size:12px;color:#5A6A61}@media print{body{margin:0}}</style></head><body class="inv">
 <div class="top"><div><h1>Invoice</h1><div class="muted">${esc(ref)}</div></div><div style="text-align:right"><strong>${esc(s.myName||'Your name')}</strong><br>${s.myNif?'NIF (PT) '+esc(s.myNif)+'<br>':''}${nl(s.myAddress)}${s.myEmail?'<br>'+esc(s.myEmail):''}</div></div>
-<div class="cols"><div><h4>Bill to</h4><strong>${esc(s.clientName||'Client')}</strong><br>${nl(s.clientAddress)}</div>
+<div class="cols"><div><h4>Bill to</h4><strong>${esc(cl.name||'Client')}</strong><br>${nl(cl.address)}${cl.country ? '<br>' + esc(cl.country === 'Estados Unidos' ? 'United States' : cl.country) : ''}${cl.taxId ? '<br>Tax ID: ' + esc(cl.taxId) : ''}</div>
 <div><h4>Invoice date</h4>${fd(issue)}<h4 style="margin-top:12px">Service period</h4>${fd(p.start)} to ${fd(p.end)}</div></div>
 <table><thead><tr><th>Description</th><th class="r">Amount (${p.c||'EUR'})</th></tr></thead><tbody>
 <tr><td>${esc(s.serviceDesc)}<br><span class="muted">Period ${p.n}: ${fd(p.start)} to ${fd(p.end)}${p.hourly ? ` (${(+p.hours).toLocaleString('en-GB',{maximumFractionDigits:2})} hours at ${money(p.rate)}/hour)` : ''}</span></td><td class="r">${money(p.base)}</td></tr>
@@ -966,9 +1043,9 @@ async function exportFile(kind){
     data = JSON.stringify({app:'recibos', version:1, exportedAt:new Date().toISOString(), docs}, null, 2); name = `recibos-backup-${today()}.json`;
   }
   else {
-    const head = ['periodo','inicio','fim','moeda','horas','valor_hora','base','extras','extras_descricao','total_moeda','taxa_bce','data_taxa','total_eur','data_emissao','n_fatura','data_pagamento','valor_recebido_eur','notas'];
+    const head = ['periodo','inicio','fim','cliente','moeda','horas','valor_hora','base','extras','extras_descricao','total_moeda','taxa_bce','data_taxa','total_eur','data_emissao','n_fatura','data_pagamento','valor_recebido_eur','notas'];
     const q = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
-    data = [head.join(';')].concat(ps.map(p => [p.n,p.start,p.end,p.c,p.hourly?String(p.hours).replace('.',','):'',p.hourly?String(p.rate).replace('.',','):'',String(p.base).replace('.',','),String(p.extrasTotal).replace('.',','),p.extras.map(e=>e.desc+' ('+e.amount+')').join(' | '),String(p.totalCur).replace('.',','),p.foreign?(p.fxEst?'estimada '+p.fx:String(p.fx)).replace('.',','):'',p.fxDate||'',String(p.amount).replace('.',','),p.issueDate,p.invoiceNo,p.paidDate,p.paidAmount!=null?String(p.paidAmount).replace('.',','):'',p.notes].map(q).join(';'))).join('\n');
+    data = [head.join(';')].concat(ps.map(p => [p.n,p.start,p.end,clientOf(p).name,p.c,p.hourly?String(p.hours).replace('.',','):'',p.hourly?String(p.rate).replace('.',','):'',String(p.base).replace('.',','),String(p.extrasTotal).replace('.',','),p.extras.map(e=>e.desc+' ('+e.amount+')').join(' | '),String(p.totalCur).replace('.',','),p.foreign?(p.fxEst?'estimada '+p.fx:String(p.fx)).replace('.',','):'',p.fxDate||'',String(p.amount).replace('.',','),p.issueDate,p.invoiceNo,p.paidDate,p.paidAmount!=null?String(p.paidAmount).replace('.',','):'',p.notes].map(q).join(';'))).join('\n');
     data = '\ufeff' + data; name = `recibos-${today()}.csv`;
   }
   await saveFile(name, data, kind === 'json' ? 'application/json' : 'text/csv');
@@ -981,7 +1058,7 @@ function importFile(file){
       if (j.docs) { st = j.docs.settings || {}; Object.entries(j.docs).forEach(([k,v]) => { if (k.startsWith('p_')) per[k.slice(2)] = v; }); }
       else if (j.settings && Array.isArray(j.periods)) {
         st = j.settings;
-        const keep = ['end','hours','rate','base','fx','fxDate','extras','issueDate','invoiceNo','paidDate','paidAmount','notes'];
+        const keep = ['clientId','end','hours','rate','base','fx','fxDate','extras','issueDate','invoiceNo','paidDate','paidAmount','notes'];
         j.periods.forEach(p => { const o = {}; keep.forEach(k => { if (p[k] != null && p[k] !== '' && !(k === 'extras' && !p[k].length)) o[k] = p[k]; }); per[p.start] = o; });
       } else throw new Error('formato');
       if (!confirm('Isto substitui todos os dados atuais pelos do ficheiro. Continuar?')) return;
