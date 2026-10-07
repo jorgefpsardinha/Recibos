@@ -417,6 +417,7 @@ function render(opts={}){
   if (tab === 'definicoes' && opts.keepForm && v.querySelector('form.settings')) return;
   v.innerHTML = tab === 'periodos' ? viewPeriods() : tab === 'contas' ? viewContas() : tab === 'calendario' ? viewCal() : tab === 'ajuda' ? viewHelp() : viewSettings();
   if (tab === 'definicoes') bindSettings();
+  if (tab === 'ajuda') bindHelp();
 }
 
 function viewPeriods(){
@@ -605,10 +606,70 @@ function viewObrig(){
   </div>`;
 }
 
+/* ---------- email para a empresa ---------- */
+let emailPeriod = null;
+function emailFor(p){
+  const s = settings, cl = clientOf(p);
+  const fd = x => D(x).toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric', timeZone:'UTC'});
+  const money = n => new Intl.NumberFormat('en-US', {style:'currency', currency:p.c || 'EUR'}).format(n || 0);
+  const eurEn = n => new Intl.NumberFormat('en-IE', {style:'currency', currency:'EUR'}).format(n || 0);
+  const issue = p.issueDate || today(), due = addDays(issue, 30);
+  const work = p.hourly ? `${(+p.hours).toLocaleString('en-US', {maximumFractionDigits:2})} hours at ${money(p.rate)}/hour` : 'consulting services';
+  const extras = p.extras.length ? `, plus ${p.extras.map(e => `${e.desc || 'additional charge'} (${money(e.amount)})`).join(', ')}` : '';
+  const ptRef = p.invoiceNo ? `(no. ${p.invoiceNo})` : '([Portal invoice number])';
+  const rateLine = p.foreign
+    ? `It shows the same amount converted to euros (${eurEn(p.amount)}) at the European Central Bank reference rate${p.fxDate ? ' of ' + fd(p.fxDate) : ''} (1 EUR = ${(+p.fx).toFixed(4)} ${p.c}).`
+    : `It shows the same amount (${eurEn(p.amount)}).`;
+  const sd = x => D(x).toLocaleDateString('en-US', {month:'short', day:'numeric', timeZone:'UTC'});
+  const subject = `Invoice ${p.invoiceNo || '[number]'}: ${sd(p.start)} to ${sd(p.end)}, ${p.end.slice(0,4)}`;
+  const body = `Hi [Name],
+
+Please find attached my invoice for consulting services for ${fd(p.start)} to ${fd(p.end)} (Period ${p.n}).
+
+There are two attachments:
+
+1. Invoice (English): the commercial invoice in ${p.c || 'EUR'}, for ${work}${extras}. Total due: ${money(p.totalCur)}. This is the amount to be paid.
+
+2. Portuguese tax invoice ${ptRef}: the official invoice issued through the Portuguese Tax Authority portal, as required by Portuguese law. ${rateLine} No action is needed on it; it is for your records.
+
+No VAT or Portuguese withholding tax applies, as the services are supplied to a business established outside the EU.
+
+Please send the payment of ${money(p.totalCur)} to the bank account on file by ${fd(due)}.
+
+Let me know if you need anything else.
+
+Best regards,
+${s.myName || '[Your name]'}`;
+  return {subject, body, to: cl.email || ''};
+}
+function viewEmail(){
+  const ps = allPeriods().filter(p => p.end < today() || p.issueDate).reverse();
+  if (!ps.length) return `<div class="panel empty">Ainda não há períodos terminados.</div>`;
+  if (!emailPeriod || !ps.some(p => p.start === emailPeriod)) emailPeriod = (ps.find(p => p.issueDate) || ps[0]).start;
+  const p = ps.find(x => x.start === emailPeriod), m = emailFor(p);
+  const mailto = `mailto:${encodeURIComponent(m.to)}?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.body)}`;
+  const missing = [!p.invoiceNo && 'o número da fatura do Portal', p.foreign && p.fxEst && 'a taxa do BCE', !settings.myName && 'o teu nome (Definições)'].filter(Boolean);
+  return `<div class="guide">
+    <p class="when" style="margin-top:8px">Email em inglês para enviares à empresa com os dois anexos: a invoice em inglês e o PDF da fatura do Portal. Preenche-se sozinho com os dados do período.</p>
+    <label>Período<select id="emailSel">${ps.map(x => `<option value="${x.start}" ${x.start === emailPeriod ? 'selected' : ''}>Período ${x.n}: ${fmtD(x.start)} a ${fmtD(x.end, true)}${x.invoiceNo ? ', ' + esc(x.invoiceNo) : ''}</option>`).join('')}</select></label>
+    ${missing.length ? `<div class="banner" style="margin-top:12px">Falta ${missing.join(' e ')}. Preenche no período para o email ficar completo.</div>` : ''}
+    <label>Para<input readonly value="${esc(m.to || 'Sem email no cliente (Definições, Clientes)')}"></label>
+    <label>Assunto<input readonly value="${esc(m.subject)}"></label>
+    <label>Mensagem<textarea readonly rows="18">${esc(m.body)}</textarea></label>
+    <div class="actions"><a class="btn primary" href="${mailto}">Abrir no email</a></div>
+    <p class="note">Antes de enviar: troca [Name] pelo nome da pessoa e anexa os dois ficheiros, a invoice em inglês (em PDF) e o PDF da fatura do Portal. A data de pagamento no email é 30 dias depois da emissão.</p>
+  </div>`;
+}
+function bindHelp(){
+  const sel = document.getElementById('emailSel');
+  if (sel) sel.onchange = () => { emailPeriod = sel.value; render(); };
+  document.getElementById('view').querySelectorAll('input[readonly], textarea[readonly]').forEach(el => el.addEventListener('focus', () => el.select()));
+}
+
 function viewHelp(){
-  const docs = [['fatura','Emitir uma fatura'],['guia','Passo a passo'],['obrig','Obrigações']];
+  const docs = [['fatura','Emitir uma fatura'],['email','Email para a empresa'],['guia','Passo a passo'],['obrig','Obrigações']];
   const nav = `<div class="yearsel" role="tablist">${docs.map(([k,l]) => `<button data-doc="${k}" aria-pressed="${helpDoc===k}">${l}</button>`).join('')}</div>`;
-  return nav + (helpDoc === 'guia' ? viewGuide() : helpDoc === 'obrig' ? viewObrig() : viewFatura());
+  return nav + (helpDoc === 'guia' ? viewGuide() : helpDoc === 'obrig' ? viewObrig() : helpDoc === 'email' ? viewEmail() : viewFatura());
 }
 function viewFatura(){
   return `<div class="guide">
@@ -628,14 +689,40 @@ function viewFatura(){
   </ol>
 
   <h2>No Portal das Finanças</h2>
-  <p class="when">Faturas e Recibos Verdes, Emitir, Fatura. Os nomes dos campos podem variar ligeiramente.</p>
+  <p class="when">Faturas e Recibos Verdes, Emitir Faturas (ou na app ATGO). Tens tudo pronto a copiar dentro do período, na app.</p>
   <ol class="steps">
-    <li><div><h3>Cliente</h3><p>A empresa, com país Estados Unidos, nome e morada. Se pedir um número fiscal estrangeiro, usa o EIN da empresa, se o tiveres.</p></div></li>
-    <li><div><h3>Descrição</h3><p>Cola o texto copiado da app.</p></div></li>
-    <li><div><h3>Valor</h3><p>O total em euros que a app mostra.</p></div></li>
-    <li><div><h3>IVA</h3><p>Opção de não sujeito, motivo <strong>art. 6.º, n.º 6, al. a) do CIVA</strong>.</p></div></li>
+    <li><div><h3>Tipo de documento</h3><p><strong>Fatura</strong>, se ainda não te pagaram. <strong>Fatura-Recibo</strong>, se já pagaram.</p></div></li>
+    <li><div><h3>Datas</h3>
+      <ul>
+        <li><strong>Data da transação:</strong> o último dia do período. Ignora o aviso sobre "ato isolado"; não se aplica.</li>
+        <li><strong>Data de vencimento:</strong> 30 dias depois de hoje, ou em branco.</li>
+      </ul></div></li>
+    <li><div><h3>Cliente (adquirente)</h3>
+      <ul>
+        <li><strong>País:</strong> Estados Unidos.</li>
+        <li><strong>NIF ou equivalente:</strong> o EIN, só os 9 dígitos, sem hífen.</li>
+        <li><strong>Nome e morada:</strong> copia de "Dados do cliente para o Portal", no período.</li>
+        <li><strong>Morada de entrega:</strong> em branco (se for obrigatória, repete a morada do cliente).</li>
+        <li><strong>Contacto:</strong> em branco, ou o email de quem paga.</li>
+      </ul></div></li>
+    <li><div><h3>Linha da fatura</h3>
+      <p>Em <kbd>Adicionar Produto, Serviço ou Outros</kbd>. Os valores de cada linha estão em "Linhas da fatura no Portal", no período.</p>
+      <ul>
+        <li><strong>Tipo:</strong> Serviço.</li>
+        <li><strong>Tipo Ref.:</strong> Outro. O EAN é para códigos de barras de produtos.</li>
+        <li><strong>Referência</strong> (obrigatória): um código teu, só para identificar a linha. <strong>CONSULT-P1</strong> no período 1, <strong>CONSULT-P2</strong> no período 2, e assim por diante. Os extras têm referência própria: <strong>EXTRA-P1</strong> (ou EXTRA-P1-1, EXTRA-P1-2, se houver vários).</li>
+        <li><strong>Descrição:</strong> o texto de "Descrição para a fatura do Portal", em português.</li>
+        <li><strong>Quantidade:</strong> 1. <strong>Unidade:</strong> UN ou Serviço.</li>
+        <li><strong>Preço Unitário s/IVA:</strong> o valor em euros da linha.</li>
+        <li><strong>Descontos:</strong> vazios.</li>
+        <li><strong>Taxa IVA:</strong> isento. <strong>Motivo de Isenção:</strong> "IVA – autoliquidação – Artigo 6.º n.º 6 alínea a) do CIVA, a contrário" (mais abaixo na lista). Alternativa: "Não sujeito ou não tributado". Não escolhas o Artigo 53.º nem "Outras isenções".</li>
+        <li><strong>Verbas de Imposto do Selo:</strong> em branco.</li>
+        <li>Carrega em <kbd>Guardar</kbd>. Repete para cada extra.</li>
+      </ul></div></li>
+    <li><div><h3>Observações</h3><p>Opcional, mas recomendado: cola o texto de "Observações" que está no período.</p></div></li>
     <li><div><h3>Retenção na fonte</h3><p>Sem retenção: cliente não residente, sem estabelecimento em Portugal.</p></div></li>
-    <li><div><h3>Emitir</h3><p>Revê o resumo, emite e descarrega o PDF.</p></div></li>
+    <li><div><h3>Confirmar e emitir</h3>
+      <p>O <strong>total do documento</strong> tem de ser igual ao total em euros da app, e o <strong>IVA a 0,00 €</strong>. Emite e descarrega o PDF.</p></div></li>
   </ol>
 
   <h2>Depois de emitir</h2>
@@ -940,6 +1027,8 @@ function openPeriod(start){
       <label>Descrição para a fatura do Portal<textarea id="ptext" readonly rows="3">${esc(portalText(p))}</textarea></label>
       <h3 style="margin-top:16px">Dados do cliente para o Portal</h3>
       <div id="pclient">${clientBox(clientOf(own))}</div>
+      <h3 style="margin-top:16px">Linhas da fatura no Portal</h3>
+      <div id="plines">${portalLinesBox(p)}</div>
       <div class="grid2">
         <label>Data de emissão<input name="issueDate" type="date" value="${esc(own.issueDate||'')}"></label>
         <label>N.º da fatura no Portal<input name="invoiceNo" value="${esc(own.invoiceNo||'')}" placeholder="FR ATSIRE01FR/1"></label>
@@ -972,7 +1061,8 @@ function openPeriod(start){
   const refresh = () => { const o = read(), q = {...p, ...o, ...calc(o)};
     document.getElementById('ptotal').textContent = (q.foreign ? cur(q.totalCur,q.c)+' = ' : '') + eur(q.amount);
     document.getElementById('ptext').value = portalText(q);
-    document.getElementById('preserve').textContent = reserveLine(q); };
+    document.getElementById('preserve').textContent = reserveLine(q);
+    document.getElementById('plines').innerHTML = portalLinesBox(q); };
   dlgBody.addEventListener('focusin', e => { if (e.target.matches('input[readonly], textarea[readonly]')) e.target.select(); });
   if (form.elements.clientId) form.elements.clientId.addEventListener('change', () => { document.getElementById('pclient').innerHTML = clientBox(clientOf({clientId:form.elements.clientId.value})); });
   form.addEventListener('input', refresh);
@@ -990,6 +1080,34 @@ function openPeriod(start){
   document.getElementById('psave').onclick = () => { savePeriod(start, read()); dlg.close(); };
   document.getElementById('pinv').onclick = () => { const o = read(); savePeriod(start, o); showInvoice(allPeriods().find(x => x.start === start)); };
   const c = document.getElementById('pclear'); if (c) c.onclick = () => { delete stored[start]; persist('p_'+start, null, 0); render(); dlg.close(); };
+}
+
+/* ---------- linhas para o Portal ---------- */
+const MOTIVO = () => settings.ivaMode === 'art53'
+  ? 'IVA – Regime de isenção – Artigo 53.º n.º 1 do CIVA'
+  : 'IVA – autoliquidação – Artigo 6.º n.º 6 alínea a) do CIVA, a contrário';
+const OBS = 'Serviços prestados a entidade estabelecida fora de Portugal. Valor faturado em USD convertido à taxa de referência do BCE indicada na descrição.';
+const ptNum = n => (+n || 0).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2, useGrouping:false});
+function portalLines(p){
+  const fx = p.foreign ? p.fx : 1, lines = [];
+  lines.push({ref:`CONSULT-P${p.n}`, desc:'Serviços de consultoria', eur:Math.round(p.base / fx * 100) / 100});
+  p.extras.forEach((e, i) => lines.push({ref:`EXTRA-P${p.n}${p.extras.length > 1 ? '-' + (i+1) : ''}`, desc:e.desc || 'Extra', eur:Math.round(e.amount / fx * 100) / 100}));
+  // Acerta o arredondamento na última linha para o total bater com a app
+  const sum = lines.reduce((a, l) => a + l.eur, 0), diff = Math.round((p.amount - sum) * 100) / 100;
+  if (diff) lines[lines.length-1].eur = Math.round((lines[lines.length-1].eur + diff) * 100) / 100;
+  return lines;
+}
+function portalLinesBox(p){
+  const ro = (l, v) => `<label>${l}<input readonly value="${esc(v)}"></label>`;
+  const ls = portalLines(p);
+  return ls.map((l, i) => `<div class="panel" style="padding:10px 12px;margin:8px 0 0">
+      <div class="sync" style="font-weight:700">Linha ${i+1}${ls.length > 1 ? ' de ' + ls.length : ''}: ${esc(l.desc)}</div>
+      <div class="grid2">${ro('Tipo / Tipo Ref.', 'Serviço / Outro')}${ro('Referência', l.ref)}</div>
+      <div class="grid2">${ro('Quantidade', '1')}${ro('Preço Unitário s/IVA (€)', ptNum(l.eur))}</div>
+    </div>`).join('') + `
+    ${ro('Taxa IVA / Motivo de Isenção', 'Isento / ' + MOTIVO())}
+    <label>Observações<textarea readonly rows="2">${esc(OBS)}</textarea></label>
+    <p class="note">Total da fatura no Portal: <strong>${eur(p.amount)}</strong>. Se houver só uma linha, a descrição completa vai nessa linha; com extras, cola a descrição completa na primeira linha e o nome de cada extra na sua.</p>`;
 }
 
 function invoiceHTML(p){
